@@ -1,12 +1,16 @@
 # Connect 4 - Session Context
 
-## Project Status: **COMPLETE & RUNNING**
+## Project Status: **LIVE ON RENDER** ✅
+
+**Live URL**: https://connect4-nemotron-ultra.onrender.com
+
+---
 
 ## What Was Built
 A real-time 2-player online Connect 4 game with:
 - Node.js + `ws` WebSocket server (single port, serves static files)
 - Vanilla HTML/CSS/JS frontend (no frameworks)
-- Deployed to Render.com ready
+- Deployed to Render.com (free tier, auto-HTTPS)
 
 ---
 
@@ -104,45 +108,65 @@ Open http://localhost:3000 in two tabs to test.
 
 ---
 
-## Deploy to Render.com (Live URL)
+## Deploy to Render.com (Already Done)
 
-### 1. Push to GitHub
-```bash
-# Create repo at github.com/new named "connect4" (no README/license)
-git remote set-url origin https://github.com/YOUR_USERNAME/connect4.git
-git push -u origin master
-```
+### 1. GitHub Repository
+**URL**: https://github.com/krish2248/Connect4-nemotron-ultra-
 
-### 2. Deploy on Render
-1. Go to https://render.com → "New +" → "Web Service"
-2. Connect GitHub → select `connect4` repo
-3. Configure:
-   - **Name**: `connect4`
-   - **Runtime**: `Node`
-   - **Build Command**: `npm install`
-   - **Start Command**: `npm start`
-4. Click "Create Web Service"
-
-Render provides HTTPS URL (e.g., `https://connect4-xxxx.onrender.com`)
+### 2. Render Service
+**URL**: https://connect4-nemotron-ultra.onrender.com
+- Runtime: Node.js
+- Build: `npm install`
+- Start: `npm start`
+- Auto-deploys on push to `master`
 
 ### 3. Test Multi-device
-Open Render URL on desktop + phone. Create room on one, join on other.
+Open Render URL on desktop + phone. Create room on one, join with 6-char code on other.
 
 ---
 
 ## Current State
-- **Server**: Running on `http://localhost:3000`
-- **Git**: Committed (23 files), ready to push
+- **Server**: Deployed on Render (HTTPS, auto-redeploy on push)
+- **Git**: https://github.com/krish2248/Connect4-nemotron-ultra- (23 files, latest commit `2d4055f`)
 - **All features**: Working end-to-end
+- **Bug Fixed**: `cleanupRooms` import alias in `server.js` (was `cleanupInactiveRooms` in `rooms.js`)
+
+---
+
+## Key Technical Decisions
+1. **Single Node server** - HTTP + WS on same port, serves `/client` static files
+2. **SHA-256 + salt** - Zero-dep password hashing (Node `crypto`)
+3. **Room cleanup** - 5-min inactivity timeout for empty/waiting rooms
+4. **Server-authoritative** - Board state, turns, timer all server-side
+5. **60fps coin drops** - CSS `transform: translate3d()` + `will-change: transform`
+6. **Confetti** - Canvas particles (100 particles, physics-based)
+7. **Sounds** - Web Audio API oscillators (no audio files needed)
+8. **Screens dynamic** - main.js renders screens, no static HTML screens
+9. **Reconnection** - localStorage session, `requestReconnect` → `stateSync`
+
+---
+
+## Achievements (8 Total)
+| ID | Name | Condition |
+|----|------|-----------|
+| `speed_demon` | Speed Demon | Win averaging <5s/move |
+| `comeback_kid` | Comeback Kid | Win after 3-in-row disadvantage |
+| `perfect_game` | Perfect Game | Win without any blocked moves |
+| `clutch` | Clutch | Win with <3s on timer |
+| `marathon` | Marathon | Game reaches 42nd move |
+| `first_blood` | First Blood | Win first game ever |
+| `untouchable` | Untouchable | Win 3 games in a row |
+| `time_waster` | Time Waster | Win with 2+ timeouts |
 
 ---
 
 ## Next Steps (if continuing)
-1. Push to GitHub (replace `YOUR_USERNAME`)
-2. Deploy to Render
-3. Test multi-device
-4. Optional: Add spectator mode, chat, or AI opponent
+1. Add spectator mode
+2. Add chat/emotes
+3. Add AI opponent for single-player
+4. Add ELO/ranking system
+5. Add custom themes
 
 ---
 
-*Session completed: All tasks done. Game is fully functional and deployable.*
+*Last updated: Deployment successful on Render. Game live at https://connect4-nemotron-ultra.onrender.com*
