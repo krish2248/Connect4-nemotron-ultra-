@@ -1,0 +1,103 @@
+@keyframes coinDrop {
+  from { transform: translate3d(0, -200px, 0); }
+  to { transform: translate3d(0, var(--target-y), 0); }
+}
+
+@keyframes coinBounce {
+  0% { transform: translate3d(0, var(--target-y), 0) scale(1, 1); }
+  40% { transform: translate3d(0, calc(var(--target-y) - 8px), 0) scale(1.05, 0.95); }
+  60% { transform: translate3d(0, calc(var(--target-y) + 2px), 0) scale(0.98, 1.02); }
+  100% { transform: translate3d(0, var(--target-y), 0) scale(1, 1); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    filter: drop-shadow(0 0 8px var(--yellow-glow)) drop-shadow(0 0 16px var(--yellow-glow));
+  }
+  50% {
+    filter: drop-shadow(0 0 16px var(--yellow-glow)) drop-shadow(0 0 32px var(--yellow-glow));
+  }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-6px); }
+  80% { transform: translateX(6px); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modalEnter {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes toastEnter {
+  from { opacity: 0; transform: translateX(100%); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes toastExit {
+  to { opacity: 0; transform: translateX(100%); }
+}
+
+@keyframes statReveal {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes achievementUnlock {
+  0% { transform: scale(0.9); opacity: 0; }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes timerPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes countdownPulse {
+  0% { transform: scale(0.5); opacity: 0; }
+  20% { transform: scale(1.1); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes bannerEnter {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+  60% { transform: translate(-50%, -50%) scale(1.05); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes confettiFall {
+  0% {
+    transform: translate3d(var(--start-x), 0, 0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(var(--end-x), var(--end-y), 0) rotate(var(--rotation));
+    opacity: 0;
+  }
+}
+
+@keyframes particleFade {
+  0% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.5); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

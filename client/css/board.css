@@ -1,0 +1,300 @@
+.board-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  max-width: 800px;
+  height: 100%;
+}
+
+.board-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.room-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.room-name {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.room-code {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: monospace;
+  background: var(--bg);
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.board-wrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.board-frame {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(7, var(--slot-size));
+  grid-template-rows: repeat(6, var(--slot-size));
+  gap: var(--gap);
+  background: linear-gradient(180deg, #1a1a2e 0%, #0f0f1a 100%);
+  border-radius: var(--radius);
+  padding: var(--gap);
+  box-shadow:
+    0 0 0 2px var(--border),
+    0 8px 32px rgba(0,0,0,0.5),
+    inset 0 2px 0 rgba(255,255,255,0.05),
+    inset 0 -2px 0 rgba(0,0,0,0.3);
+}
+
+.board-frame::before {
+  content: '';
+  position: absolute;
+  inset: calc(-1 * var(--gap));
+  background: radial-gradient(ellipse at center, rgba(255,255,255,0.03) 0%, transparent 70%);
+  pointer-events: none;
+  border-radius: calc(var(--radius) + var(--gap));
+}
+
+.slot-column {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--gap);
+  position: relative;
+}
+
+.slot-column:hover .coin-preview,
+.slot-column.active .coin-preview {
+  opacity: 0.35;
+  transform: scale(1);
+}
+
+.slot {
+  position: relative;
+  width: var(--slot-size);
+  height: var(--slot-size);
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at 30% 30%, #1a1a2e 0%, #0a0a14 60%, #05050a 100%),
+    radial-gradient(circle at 70% 70%, rgba(255,255,255,0.02) 0%, transparent 50%);
+  box-shadow:
+    inset 0 4px 8px rgba(0,0,0,0.6),
+    inset 0 -2px 4px rgba(255,255,255,0.03),
+    0 2px 4px rgba(0,0,0,0.4);
+  overflow: hidden;
+}
+
+.slot::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+.coin-preview {
+  position: absolute;
+  top: calc(-1 * var(--slot-size) - var(--gap));
+  left: 0;
+  width: var(--slot-size);
+  height: var(--slot-size);
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--transition), transform var(--transition);
+  z-index: 10;
+  transform: scale(0.8);
+}
+
+.coin-preview.yellow {
+  background: radial-gradient(circle at 30% 30%, var(--yellow) 0%, var(--yellow-dim) 60%, #c97800 100%);
+  box-shadow: var(--shadow-coin);
+}
+
+.coin-preview.red {
+  background: radial-gradient(circle at 30% 30%, var(--red) 0%, var(--red-dim) 60%, #b01e1e 100%);
+  box-shadow: var(--shadow-coin);
+}
+
+.coin {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--slot-size);
+  height: var(--slot-size);
+  border-radius: 50%;
+  transform: translate3d(0, -200px, 0);
+  will-change: transform;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.coin.yellow {
+  background: radial-gradient(circle at 30% 30%, var(--yellow) 0%, var(--yellow-dim) 60%, #c97800 100%);
+  box-shadow:
+    inset 0 -4px 8px rgba(0,0,0,0.3),
+    inset 0 4px 8px rgba(255,255,255,0.2),
+    var(--shadow-coin);
+}
+
+.coin.red {
+  background: radial-gradient(circle at 30% 30%, var(--red) 0%, var(--red-dim) 60%, #b01e1e 100%);
+  box-shadow:
+    inset 0 -4px 8px rgba(0,0,0,0.3),
+    inset 0 4px 8px rgba(255,255,255,0.15),
+    var(--shadow-coin);
+}
+
+.coin.dropping {
+  animation: coinDrop 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards,
+             coinBounce 0.3s ease-out 0.6s forwards;
+}
+
+.coin.settled {
+  animation: none;
+  transform: translate3d(0, var(--target-y), 0);
+}
+
+.coin.winning {
+  animation: pulseGlow 1.5s ease-in-out infinite alternate;
+}
+
+@keyframes coinDrop {
+  from { transform: translate3d(0, -200px, 0); }
+  to { transform: translate3d(0, var(--target-y), 0); }
+}
+
+@keyframes coinBounce {
+  0% { transform: translate3d(0, var(--target-y), 0) scale(1, 1); }
+  40% { transform: translate3d(0, calc(var(--target-y) - 8px), 0) scale(1.05, 0.95); }
+  60% { transform: translate3d(0, calc(var(--target-y) + 2px), 0) scale(0.98, 1.02); }
+  100% { transform: translate3d(0, var(--target-y), 0) scale(1, 1); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    filter: drop-shadow(0 0 8px var(--yellow-glow)) drop-shadow(0 0 16px var(--yellow-glow));
+  }
+  50% {
+    filter: drop-shadow(0 0 16px var(--yellow-glow)) drop-shadow(0 0 32px var(--yellow-glow));
+  }
+}
+
+.column-shake {
+  animation: shake 0.3s ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-6px); }
+  80% { transform: translateX(6px); }
+}
+
+.countdown-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.8);
+  border-radius: var(--radius);
+  z-index: 20;
+}
+
+.countdown-number {
+  font-size: clamp(80px, 20vw, 140px);
+  font-weight: 700;
+  color: var(--yellow);
+  text-shadow: 0 0 30px var(--yellow-glow), 0 0 60px var(--yellow-glow);
+  animation: countdownPulse 1s ease-out;
+}
+
+@keyframes countdownPulse {
+  0% { transform: scale(0.5); opacity: 0; }
+  20% { transform: scale(1.1); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.win-banner {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.8);
+  background: var(--surface);
+  border: 2px solid var(--yellow);
+  border-radius: var(--radius);
+  padding: 32px 48px;
+  text-align: center;
+  box-shadow: 0 0 60px rgba(251, 191, 36, 0.3), var(--shadow);
+  z-index: 200;
+  animation: bannerEnter 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.win-banner.draw {
+  border-color: var(--text-muted);
+}
+
+.win-banner-text {
+  font-size: clamp(28px, 6vw, 40px);
+  font-weight: 700;
+  color: var(--yellow);
+  margin-bottom: 8px;
+}
+
+.win-banner.draw .win-banner-text {
+  color: var(--text-muted);
+}
+
+.win-banner-subtext {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+@keyframes bannerEnter {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+  60% { transform: translate(-50%, -50%) scale(1.05); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+.confetti-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 150;
+}
+
+.game-actions {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.rematch-btn {
+  flex: 1;
+  min-width: 180px;
+}
+
+.stats-btn {
+  flex: 1;
+  min-width: 140px;
+}
