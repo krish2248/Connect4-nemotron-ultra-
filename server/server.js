@@ -6,7 +6,7 @@ const { v4: uuidv4 } = require('uuid');
 
 const rooms = require('./rooms');
 const { handleMessage } = require('./websocket');
-const { cleanupRooms } = require('./rooms');
+const { cleanupInactiveRooms: cleanupRooms } = require('./rooms');
 
 const PORT = process.env.PORT || 3000;
 const CLIENT_DIR = path.join(__dirname, '../client');
