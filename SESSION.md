@@ -1,140 +1,148 @@
 # Connect 4 - Session Context
 
-## Project Overview
-Real-time 2-player online Connect 4 game with WebSocket server (Node.js + ws) and static frontend.
+## Project Status: **COMPLETE & RUNNING**
+
+## What Was Built
+A real-time 2-player online Connect 4 game with:
+- Node.js + `ws` WebSocket server (single port, serves static files)
+- Vanilla HTML/CSS/JS frontend (no frameworks)
+- Deployed to Render.com ready
+
+---
 
 ## Architecture
-- **Server** (`/server`): Node.js HTTP + WebSocket server on single port (3000)
-- **Client** (`/client`): Vanilla HTML/CSS/JS (no framework)
-- **Deployment**: Render.com (free tier, auto-HTTPS)
 
-## Completed Files
+### Server (`/server`)
+| File | Purpose |
+|------|---------|
+| `server.js` | HTTP + WS server, static file serving from `/client` |
+| `rooms.js` | Room management, SHA-256 password hashing, 5-min auto-cleanup |
+| `gameLogic.js` | Authoritative 7×6 board, win/draw detection (4 directions) |
+| `timer.js` | 30s server-authoritative turn timer, timeout = skip turn |
+| `websocket.js` | C2S/S2C message routing protocol |
 
-### Server
-- `server/package.json` - ws ^8.17.0, uuid ^9.0.0
-- `server/server.js` - HTTP + WS server, static file serving from `/client`
-- `server/rooms.js` - Room management, SHA-256 password hashing, 5-min cleanup, 6-char human-readable codes
-- `server/gameLogic.js` - Authoritative 7x6 board, win detection (4 dirs), draw detection
-- `server/timer.js` - 30s turn timer, server-authoritative, timeout skip (not game over)
-- `server/websocket.js` - Message routing (C2S/S2C protocol)
+### Client (`/client`)
+| File | Purpose |
+|------|---------|
+| `index.html` | Single entry point, loads 4 CSS + 9 JS modules |
+| `css/main.css` | Design system (dark premium theme, CSS variables) |
+| `css/board.css` | Board frame, slots, 60fps GPU coin animations |
+| `css/ui.css` | Screens, modals, timer ring, stats, achievements |
+| `css/animations.css` | Keyframes (drop, bounce, glow, confetti, banner) |
+| `js/main.js` | App state, routing, WS handlers, screen rendering |
+| `js/websocket.js` | WS client wrapper (reconnect, queue, heartbeat) |
+| `js/board.js` | 60fps coin drops (gravity + bounce), hover preview |
+| `js/timer.js` | SVG circular progress ring |
+| `js/ui.js` | Toasts, modals, win banner, canvas confetti |
+| `js/stats.js` | localStorage stats + 8 achievements |
+| `js/gameLogic.js` | Client preview only (drop row, valid moves) |
+| `js/reconnect.js` | Session restore from localStorage |
+| `js/audio.js` | Web Audio API (coin drop, win, timeout, button) |
 
-### Client
-- `client/index.html` - Single entry point
-- `client/css/main.css` - Design system (dark premium theme, CSS variables)
-- `client/css/board.css` - Board frame, slots, 60fps GPU coin animations (gravity + bounce)
-- `client/css/ui.css` - Screens, modals, timer ring, stats, achievements
-- `client/css/animations.css` - Keyframes
-- `client/js/main.js` - App state, routing, WS handlers, dynamic screen rendering
-- `client/js/websocket.js` - WS client (auto-reconnect, queue, heartbeat)
-- `client/js/board.js` - Board rendering, 60fps coin drops, hover preview
-- `client/js/timer.js` - SVG circular progress ring
-- `client/js/ui.js` - Toasts, modals, win banner, canvas confetti
-- `client/js/stats.js` - localStorage stats + 8 achievements
-- `client/js/gameLogic.js` - Client preview only (drop row, valid moves)
-- `client/js/reconnect.js` - Session restore from localStorage
-- `client/js/audio.js` - Web Audio API (coin drop, win, timeout, button)
+---
 
 ## Features Implemented
-- Real-time 2-player via WebSocket
-- Room codes (6-char human-readable)
-- Password-protected rooms (SHA-256 + salt)
-- 30s turn timer (server-authoritative, synced)
-- Coin drop animation (gravity ease-in + bounce, 60fps GPU)
-- Win detection (horizontal, vertical, both diagonals) + draw
-- Win animations (coin glow, confetti burst, banner entrance)
-- Stats tracking + 8 achievements (persisted in localStorage)
-- Reconnection handling (refresh/brief disconnect restores game)
-- Rematch system (play again in same room)
-- Keyboard (1-7) + mouse/touch support
-- Elegant sound effects (Web Audio API)
-- Responsive dark theme
-- Respects `prefers-reduced-motion`
+- ✅ Real-time 2-player via WebSocket
+- ✅ Human-readable 6-char room codes
+- ✅ Password-protected rooms (SHA-256 + salt)
+- ✅ 30s turn timer (server-authoritative, synced to both clients)
+- ✅ 60fps GPU-accelerated coin drops with bounce
+- ✅ Win detection (horizontal, vertical, both diagonals) + draw
+- ✅ Win animations: coin glow pulse, canvas confetti burst, banner scale/fade-in
+- ✅ Stats tracking (session + persistent): games, wins, losses, draws, streak
+- ✅ 8 Achievements with unlock toasts: Speed Demon, Comeback Kid, Perfect Game, Clutch, Marathon, First Blood, Untouchable, Time Waster
+- ✅ Reconnection: refresh/brief disconnect restores game state
+- ✅ Rematch system (play again in same room)
+- ✅ Keyboard (1-7) + mouse/touch support
+- ✅ Elegant Web Audio API sounds (coin drop, win arpeggio, timeout beep, button click)
+- ✅ Responsive dark premium theme
+- ✅ Respects `prefers-reduced-motion`
+
+---
 
 ## WebSocket Protocol
 
 ### Client → Server
-| Type | Payload |
-|------|---------|
-| `createRoom` | `{ name, password, playerName }` |
-| `joinRoom` | `{ roomId, password, playerName }` |
-| `dropCoin` | `{ column }` |
-| `requestRematch` | `{ roomId }` |
-| `requestReconnect` | `{ roomId, playerId }` |
-| `requestState` | `{ roomId }` |
-
-### Server → Client
-| Type | Payload |
-|------|---------|
-| `roomCreated` | `{ roomId, roomName, playerId, playerColor, isHost }` |
-| `roomJoined` | `{ roomId, roomName, players, playerId, playerColor, gameState }` |
-| `roomError` | `{ code, message }` |
-| `gameStart` | `{ gameState, countdown: 3 }` |
-| `coinDropped` | `{ column, row, player, board }` |
-| `gameState` | `{ board, currentPlayer, winner, winningCoords, isDraw, moveCount }` |
-| `turnChanged` | `{ currentPlayer, timeRemaining }` |
-| `turnSkipped` | `{ player, reason: 'timeout' }` |
-| `gameEnd` | `{ winner, winningCoords, isDraw, stats }` |
-| `playerDisconnected` | `{ playerId }` |
-| `playerReconnected` | `{ playerId }` |
-| `rematchOffered` | `{ fromPlayerId }` |
-| `rematchAccepted` | `{ gameState }` |
-| `stateSync` | `{ gameState, timerState }` |
-
-## Achievements
-1. **Speed Demon** - Win averaging <5s/move
-2. **Comeback Kid** - Win after 3-in-row disadvantage
-3. **Perfect Game** - Win without any blocked moves
-4. **Clutch** - Win with <3s on timer
-5. **Marathon** - Game reaches 42nd move
-6. **First Blood** - Win first game ever
-7. **Untouchable** - Win 3 games in a row
-8. **Time Waster** - Win with 2+ timeouts
-
-## Next Steps (To Deploy)
-
-### 1. Create GitHub Repository
-```bash
-# Go to https://github.com/new and create repo named "connect4"
-# Do NOT initialize with README, .gitignore, or license
+```
+createRoom: { name, password, playerName }
+joinRoom: { roomId, password, playerName }
+dropCoin: { column }
+requestRematch: { roomId }
+requestReconnect: { roomId, playerId }
+requestState: { roomId }
 ```
 
-### 2. Push to GitHub
+### Server → Client
+```
+roomCreated: { roomId, roomName, playerId, playerColor, isHost }
+roomJoined: { roomId, roomName, players, playerId, playerColor, gameState }
+roomError: { code, message }
+gameStart: { gameState, countdown: 3 }
+coinDropped: { column, row, player, board }
+gameState: { board, currentPlayer, winner, winningCoords, isDraw, moveCount }
+turnChanged: { currentPlayer, timeRemaining }
+turnSkipped: { player, reason: 'timeout' }
+gameEnd: { winner, winningCoords, isDraw, stats }
+playerDisconnected: { playerId }
+playerReconnected: { playerId }
+rematchOffered: { fromPlayerId }
+rematchAccepted: { gameState }
+stateSync: { gameState, timerState }
+```
+
+---
+
+## How to Run Locally
 ```bash
+cd server
+npm install
+npm run dev    # with --watch auto-reload
+# or
+npm start      # production
+```
+Open http://localhost:3000 in two tabs to test.
+
+---
+
+## Deploy to Render.com (Live URL)
+
+### 1. Push to GitHub
+```bash
+# Create repo at github.com/new named "connect4" (no README/license)
 git remote set-url origin https://github.com/YOUR_USERNAME/connect4.git
 git push -u origin master
 ```
 
-### 3. Deploy to Render.com
-1. Go to https://render.com → New + → Web Service
-2. Connect GitHub, select `connect4` repo
+### 2. Deploy on Render
+1. Go to https://render.com → "New +" → "Web Service"
+2. Connect GitHub → select `connect4` repo
 3. Configure:
-   - Name: `connect4`
-   - Region: closest to you
-   - Branch: `master`
-   - Runtime: `Node`
-   - Build Command: `npm install`
-   - Start Command: `npm start`
-4. Create Web Service
+   - **Name**: `connect4`
+   - **Runtime**: `Node`
+   - **Build Command**: `npm install`
+   - **Start Command**: `npm start`
+4. Click "Create Web Service"
 
 Render provides HTTPS URL (e.g., `https://connect4-xxxx.onrender.com`)
 
-### 4. Test Multi-device
+### 3. Test Multi-device
 Open Render URL on desktop + phone. Create room on one, join on other.
 
-## Local Development
-```bash
-cd server
-npm install
-npm run dev  # auto-reload on changes
-# Open http://localhost:3000
-```
+---
 
-## Key Design Decisions
-- Single Node.js server (HTTP + WS on same port)
-- SHA-256 password hashing (Node crypto, zero deps)
-- Room cleanup: 5 min inactivity for empty/waiting rooms
-- Server-authoritative game logic + timer (prevents cheating)
-- 60fps coin drops: CSS `transform: translate3d()` + `will-change: transform`
-- Confetti: Canvas particles (100 particles, physics-based)
-- Sound: Web Audio API (sine/square oscillators, no audio files)
-- Screens dynamically rendered by main.js (no static HTML screens)
+## Current State
+- **Server**: Running on `http://localhost:3000`
+- **Git**: Committed (23 files), ready to push
+- **All features**: Working end-to-end
+
+---
+
+## Next Steps (if continuing)
+1. Push to GitHub (replace `YOUR_USERNAME`)
+2. Deploy to Render
+3. Test multi-device
+4. Optional: Add spectator mode, chat, or AI opponent
+
+---
+
+*Session completed: All tasks done. Game is fully functional and deployable.*
