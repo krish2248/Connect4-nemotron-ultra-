@@ -127,9 +127,24 @@ Open Render URL on desktop + phone. Create room on one, join with 6-char code on
 
 ## Current State
 - **Server**: Deployed on Render (HTTPS, auto-redeploy on push)
-- **Git**: https://github.com/krish2248/Connect4-nemotron-ultra- (23 files, latest commit `2d4055f`)
+- **Git**: https://github.com/krish2248/Connect4-nemotron-ultra- (latest commit `9c31f51`)
 - **All features**: Working end-to-end
-- **Bug Fixed**: `cleanupRooms` import alias in `server.js` (was `cleanupInactiveRooms` in `rooms.js`)
+
+### Bugs Fixed
+1. **`cleanupRooms` import alias** in `server.js` (was `cleanupInactiveRooms` in `rooms.js`)
+2. **`.gitignore` encoding** — was UTF-16 LE, which git can't parse, so
+   `server/node_modules/` was never actually ignored. Rewritten as UTF-8. (`e7a518d`)
+3. **Blank screen on HTTPS deploy** (`7bc627b`):
+   - `websocket.js` hardcoded `ws://`, blocked as mixed content on the HTTPS
+     Render site. Now picks `wss://` on `https:` pages.
+   - `main.js` awaited `ws.connect()` before `render()`, but `connect()`'s promise
+     only resolves on open and never rejects on failure — a blocked socket hung
+     `init()` forever and nothing rendered. Now renders first, connects in a
+     try/catch.
+4. **Join "just refreshes the page"** (`9c31f51`) — `createRoom` sent a UUID as the
+   room id but the Join input caps at 6 chars and the client uppercases it, so
+   `rooms.get()` always missed → `roomNotFound` → landing screen re-rendered. The
+   room id is now the unique 6-char code everywhere (create/share/join).
 
 ---
 
@@ -169,4 +184,4 @@ Open Render URL on desktop + phone. Create room on one, join with 6-char code on
 
 ---
 
-*Last updated: Deployment successful on Render. Game live at https://connect4-nemotron-ultra.onrender.com*
+*Last updated: 2026-07-22 — Fixed HTTPS blank-screen and join-by-code bugs. Game live at https://connect4-nemotron-ultra.onrender.com*
