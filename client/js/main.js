@@ -37,10 +37,15 @@ const App = {
     this.stats = new Stats();
     this.achievements = new Achievements(this.stats);
     this.ws = new GameSocket(this.handleMessage.bind(this));
-    await this.ws.connect();
     this.setupEventListeners();
-    await this.checkReconnect();
     this.render();
+    try {
+      await this.ws.connect();
+    } catch (e) {
+      console.error('WebSocket connection failed:', e);
+      this.showToast('Connection failed. Retrying...', 'error');
+    }
+    await this.checkReconnect();
   },
 
   setupEventListeners() {

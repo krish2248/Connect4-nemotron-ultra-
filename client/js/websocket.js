@@ -1,7 +1,8 @@
 export class GameSocket extends EventTarget {
   constructor(onMessage) {
     super();
-    this.url = `ws://${location.host}`;
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    this.url = `${proto}//${location.host}`;
     this.ws = null;
     this.onMessage = onMessage;
     this.messageQueue = [];
