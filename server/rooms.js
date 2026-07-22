@@ -16,13 +16,22 @@ function generateRoomCode() {
   return code;
 }
 
+function generateUniqueRoomCode() {
+  let code;
+  do {
+    code = generateRoomCode();
+  } while (rooms.has(code));
+  return code;
+}
+
 function hashPassword(password, salt) {
   return crypto.createHash('sha256').update(salt + password).digest('hex');
 }
 
 function createRoom(name, password, hostWs, hostName) {
-  const roomId = uuidv4();
-  const roomCode = generateRoomCode();
+  // The room id IS the shareable 6-char code (uppercase A-Z/2-9).
+  const roomId = generateUniqueRoomCode();
+  const roomCode = roomId;
   const salt = crypto.randomBytes(16).toString('hex');
   const passwordHash = password ? hashPassword(password, salt) : null;
   const playerId = uuidv4();
