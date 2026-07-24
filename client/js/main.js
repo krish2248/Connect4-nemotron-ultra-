@@ -15,6 +15,9 @@ const App = {
   playerColor: null,
   playerName: '',
   isHost: false,
+  singlePlayer: false,
+  difficulty: null,
+  opponentName: 'Opponent',
   gameState: null,
   timerState: null,
   myTurn: false,
@@ -132,6 +135,16 @@ const App = {
     this.playerColor = payload.playerColor;
     this.isHost = payload.isHost;
     Reconnect.saveSession(this.roomId, this.playerId);
+
+    if (payload.singlePlayer) {
+      // The bot is already seated; gameStart follows immediately, so stay put
+      // and let handleGameStart flip us straight into the match (no waiting flash).
+      this.singlePlayer = true;
+      this.difficulty = payload.difficulty || this.difficulty;
+      this.opponentName = payload.opponentName || 'Computer';
+      return;
+    }
+
     this.state = 'waiting';
     this.render();
   },
@@ -281,6 +294,11 @@ const App = {
   handleRematchAccepted(payload) {
     this.gameState = payload.gameState;
     this.state = 'playing';
+    this.myTurn = this.gameState.currentPlayer === (this.playerColor === 'yellow' ? 1 : 2);
+    this.timeoutsThisGame = { 1: 0, 2: 0 };
+    this.blockedMovesThisGame = { 1: 0, 2: 0 };
+    this.moveStartTime = 0;
+    this.stats.startGame();
     if (this.board) this.board.reset();
     this.render();
     this.ui.closeAllModals();
@@ -376,8 +394,15 @@ const App = {
     `;
 
     this.ui.showModal('Stats & Achievements', content, [
-      { label: 'Close', class: 'btn-secondary', handler: () => {} }
+      { label: 'Play Again', class: 'btn-primary', handler: () => this.playAgain() },
+      { label: 'Main Menu', class: 'btn-secondary', handler: () => this.disconnect() }
     ]);
+  },
+
+  playAgain() {
+    this.ws.send('requestRematch', { roomId: this.roomId });
+    this.ui.closeAllModals();
+    if (!this.singlePlayer) this.showToast('Rematch requested…', 'info');
   },
 
   formatTime(ms) {
@@ -453,10 +478,26 @@ const App = {
     screen.innerHTML = `
       <div class="card" style="max-width: 420px; width: 100%;">
         <h1>Connect 4</h1>
-        <p class="subtitle">Real-time 2-player online game</p>
-        
+        <p class="subtitle">Play a friend online — or take on the computer</p>
+
+        <div class="divider">Play vs Computer</div>
+
+        <div class="form-group">
+          <label for="solo-player-name">Your Name</label>
+          <input type="text" id="solo-player-name" placeholder="Player 1" maxlength="16" required>
+        </div>
+        <div class="form-group">
+          <label>Difficulty</label>
+          <div class="difficulty-group" id="difficulty-group">
+            <button type="button" class="difficulty-btn" data-difficulty="easy">Easy</button>
+            <button type="button" class="difficulty-btn active" data-difficulty="medium">Medium</button>
+            <button type="button" class="difficulty-btn" data-difficulty="hard">Hard</button>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-play-computer">Play vs Computer</button>
+
         <div class="divider">Create Server</div>
-        
+
         <div class="form-group">
           <label for="create-name">Server Name</label>
           <input type="text" id="create-name" placeholder="My Server" maxlength="30">
@@ -469,7 +510,7 @@ const App = {
           <label for="create-player-name">Your Name</label>
           <input type="text" id="create-player-name" placeholder="Player 1" maxlength="16" required>
         </div>
-        <button class="btn btn-primary" id="btn-create-room">Create Server</button>
+        <button class="btn btn-secondary" id="btn-create-room">Create Server</button>
         
         <div class="divider">Join Server</div>
         
@@ -490,6 +531,23 @@ const App = {
     `;
 
     setTimeout(() => {
+      const soloPlayerName = screen.querySelector('#solo-player-name');
+      const difficultyGroup = screen.querySelector('#difficulty-group');
+      const btnPlayComputer = screen.querySelector('#btn-play-computer');
+      let difficulty = 'medium';
+
+      difficultyGroup.querySelectorAll('.difficulty-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          difficultyGroup.querySelectorAll('.difficulty-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          difficulty = btn.dataset.difficulty;
+        });
+      });
+
+      btnPlayComputer.addEventListener('click', () => {
+        this.createSinglePlayer(soloPlayerName.value, difficulty);
+      });
+
       const createName = screen.querySelector('#create-name');
       const createPassword = screen.querySelector('#create-password');
       const createPlayerName = screen.querySelector('#create-player-name');
@@ -499,6 +557,8 @@ const App = {
       const joinPassword = screen.querySelector('#join-password');
       const joinPlayerName = screen.querySelector('#join-player-name');
       const btnJoin = screen.querySelector('#btn-join-room');
+
+      soloPlayerName.addEventListener('keypress', (e) => { if (e.key === 'Enter') btnPlayComputer.click(); });
 
       btnCreate.addEventListener('click', () => {
         this.createRoom(createName.value, createPassword.value, createPlayerName.value);
@@ -516,7 +576,7 @@ const App = {
         el.addEventListener('keypress', (e) => { if (e.key === 'Enter') btnJoin.click(); });
       });
 
-      createPlayerName.focus();
+      soloPlayerName.focus();
     }, 0);
 
     return screen;
@@ -647,8 +707,8 @@ const App = {
     const n2 = document.getElementById('player2-name');
 
     if (p1 && p2 && n1 && n2) {
-      n1.textContent = isYellow ? `${this.playerName} (You)` : 'Opponent';
-      n2.textContent = !isYellow ? `${this.playerName} (You)` : 'Opponent';
+      n1.textContent = isYellow ? `${this.playerName} (You)` : this.opponentName;
+      n2.textContent = !isYellow ? `${this.playerName} (You)` : this.opponentName;
 
       p1.classList.toggle('active', this.myTurn && isYellow);
       p2.classList.toggle('active', this.myTurn && !isYellow);
@@ -703,8 +763,17 @@ const App = {
   },
 
   createRoom(name, password, playerName) {
+    this.singlePlayer = false;
+    this.opponentName = 'Opponent';
     this.playerName = playerName || 'Player 1';
     this.ws.send('createRoom', { name, password, playerName: this.playerName });
+  },
+
+  createSinglePlayer(playerName, difficulty) {
+    this.singlePlayer = true;
+    this.difficulty = difficulty || 'medium';
+    this.playerName = playerName || 'Player 1';
+    this.ws.send('createSinglePlayer', { playerName: this.playerName, difficulty: this.difficulty });
   },
 
   joinRoom(roomId, password, playerName) {
@@ -713,12 +782,15 @@ const App = {
   },
 
   disconnect() {
+    this.ui.closeAllModals();
     if (this.ws) this.ws.close();
     this.state = 'landing';
     this.roomId = null;
     this.playerId = null;
     this.gameState = null;
     this.timerState = null;
+    this.singlePlayer = false;
+    this.opponentName = 'Opponent';
     Reconnect.clearSession();
     this.render();
   }

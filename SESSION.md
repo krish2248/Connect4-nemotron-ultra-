@@ -20,10 +20,11 @@ A real-time 2-player online Connect 4 game with:
 | File | Purpose |
 |------|---------|
 | `server.js` | HTTP + WS server, static file serving from `/client` |
-| `rooms.js` | Room management, SHA-256 password hashing, 5-min auto-cleanup |
+| `rooms.js` | Room management, SHA-256 password hashing, 5-min auto-cleanup, single-player bot rooms |
 | `gameLogic.js` | Authoritative 7×6 board, win/draw detection (4 directions) |
 | `timer.js` | 30s server-authoritative turn timer, timeout = skip turn |
-| `websocket.js` | C2S/S2C message routing protocol |
+| `websocket.js` | C2S/S2C message routing, `applyMove`/`advanceTurn` turn engine, AI move scheduling |
+| `ai.js` | Single-player AI: minimax + alpha-beta, difficulty-based depth, immediate win/block |
 
 ### Client (`/client`)
 | File | Purpose |
@@ -47,6 +48,7 @@ A real-time 2-player online Connect 4 game with:
 
 ## Features Implemented
 - ✅ Real-time 2-player via WebSocket
+- ✅ **Single-player vs AI** (Easy / Medium / Hard) — server-side minimax opponent
 - ✅ Human-readable 6-char room codes
 - ✅ Password-protected rooms (SHA-256 + salt)
 - ✅ 30s turn timer (server-authoritative, synced to both clients)
@@ -69,6 +71,7 @@ A real-time 2-player online Connect 4 game with:
 ### Client → Server
 ```
 createRoom: { name, password, playerName }
+createSinglePlayer: { playerName, difficulty }   # difficulty: easy|medium|hard
 joinRoom: { roomId, password, playerName }
 dropCoin: { column }
 requestRematch: { roomId }
@@ -78,7 +81,7 @@ requestState: { roomId }
 
 ### Server → Client
 ```
-roomCreated: { roomId, roomName, playerId, playerColor, isHost }
+roomCreated: { roomId, roomName, playerId, playerColor, isHost, singlePlayer?, difficulty?, opponentName? }
 roomJoined: { roomId, roomName, players, playerId, playerColor, gameState }
 roomError: { code, message }
 gameStart: { gameState, countdown: 3 }
@@ -130,7 +133,30 @@ Open Render URL on desktop + phone. Create room on one, join with 6-char code on
 - **Git**: https://github.com/krish2248/Connect4-nemotron-ultra- (latest commit `9c31f51`)
 - **All features**: Working end-to-end
 
+## Single-Player AI (`server/ai.js`)
+- Human is always player 1 (yellow); the bot is player 2 (red) with no websocket —
+  the server drives its moves. Created via `createSinglePlayer`; the room starts
+  immediately (no waiting screen).
+- **Algorithm**: minimax with alpha-beta pruning, centre-first move ordering.
+  - `easy`: depth 2, 45% random moves, occasionally misses a block.
+  - `medium`: depth 4, 12% random moves.
+  - `hard`: depth 7, always optimal within the search horizon.
+- Always takes an immediate win; blocks the opponent's immediate win (except the
+  easy bot, sometimes). Heuristic scores 4-cell windows + centre control.
+- **Turn engine**: `websocket.applyMove()` applies any move (human or bot) and
+  `advanceTurn()` decides whether to start the human timer or schedule the bot.
+  The bot "thinks" for 600–1300ms, then plays. The human keeps the 30s timer; the
+  bot is never timed out.
+- **Rematch**: single-player "Play Again" restarts instantly against the bot (no
+  opponent to ask). Reachable from the game-over stats modal (Play Again / Main Menu).
+
 ### Bugs Fixed
+0. **Blocking: game could not complete a single turn.** `websocket.js` referenced
+   `gameLogic.YELLOW`, `gameLogic.switchPlayer`, and `timer.switchTurn` — none of
+   which existed — and `server.js` called `rooms.handleDisconnect` (only
+   `leaveRoom` exists). Added `YELLOW`/`RED`/`switchPlayer` to `gameLogic`,
+   `switchTurn` to `timer`, and fixed the disconnect handler. Turn flow now routes
+   through `advanceTurn`.
 1. **`cleanupRooms` import alias** in `server.js` (was `cleanupInactiveRooms` in `rooms.js`)
 2. **`.gitignore` encoding** — was UTF-16 LE, which git can't parse, so
    `server/node_modules/` was never actually ignored. Rewritten as UTF-8. (`e7a518d`)
@@ -178,10 +204,10 @@ Open Render URL on desktop + phone. Create room on one, join with 6-char code on
 ## Next Steps (if continuing)
 1. Add spectator mode
 2. Add chat/emotes
-3. Add AI opponent for single-player
-4. Add ELO/ranking system
-5. Add custom themes
+3. Add ELO/ranking system
+4. Add custom themes
+5. Show a subtle "thinking…" indicator on the bot panel during its turn
 
 ---
 
-*Last updated: 2026-07-22 — Fixed HTTPS blank-screen and join-by-code bugs. Game live at https://connect4-nemotron-ultra.onrender.com*
+*Last updated: 2026-07-24 — Added single-player AI opponent (minimax, 3 difficulties) and fixed the blocking turn-engine reference bugs. Game live at https://connect4-nemotron-ultra.onrender.com*

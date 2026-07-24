@@ -51,14 +51,20 @@ function handleTurnTimeout(room) {
   const nextPlayer = skippedPlayer === 1 ? 2 : 1;
   room.gameState.currentPlayer = nextPlayer;
 
-  const { broadcast } = require('./websocket');
-  broadcast(room, 'turnSkipped', { player: skippedPlayer, reason: 'timeout' });
+  const ws = require('./websocket');
+  ws.broadcast(room, 'turnSkipped', { player: skippedPlayer, reason: 'timeout' });
 
   setTimeout(() => {
     if (room.gameState && !room.gameState.winner && !room.gameState.isDraw) {
-      startTurnTimer(room, nextPlayer);
+      ws.advanceTurn(room);
     }
   }, 500);
+}
+
+// Advance to whoever gameState.currentPlayer now points at. Delegates the
+// human-vs-bot decision to websocket.advanceTurn so bot turns are handled there.
+function switchTurn(room) {
+  require('./websocket').advanceTurn(room);
 }
 
 function broadcastTimerUpdate(room) {
@@ -97,6 +103,7 @@ module.exports = {
   TURN_TIME,
   startTurnTimer,
   stopTurnTimer,
+  switchTurn,
   tickTimer,
   handleTurnTimeout,
   broadcastTimerUpdate,

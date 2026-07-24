@@ -4,7 +4,14 @@ const ROWS = 6;
 const EMPTY = 0;
 const PLAYER1 = 1;
 const PLAYER2 = 2;
+// Color aliases (player 1 is always yellow, player 2 red).
+const YELLOW = PLAYER1;
+const RED = PLAYER2;
 const PLAYER_COLORS = { 1: 'yellow', 2: 'red' };
+
+function switchPlayer(player) {
+  return player === PLAYER1 ? PLAYER2 : PLAYER1;
+}
 
 function createGameState() {
   const board = Array.from({ length: COLS }, () => Array(ROWS).fill(EMPTY));
@@ -118,7 +125,10 @@ module.exports = {
   EMPTY,
   PLAYER1,
   PLAYER2,
+  YELLOW,
+  RED,
   PLAYER_COLORS,
+  switchPlayer,
   createGameState,
   dropCoin,
   checkWin,

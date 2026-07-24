@@ -68,6 +68,65 @@ function createRoom(name, password, hostWs, hostName) {
   return { roomId, roomCode, playerId };
 }
 
+const BOT_NAMES = {
+  easy: 'Computer (Easy)',
+  medium: 'Computer (Medium)',
+  hard: 'Computer (Hard)'
+};
+
+// Create a single-player room: the human is player 1 (yellow), an AI bot is
+// player 2 (red). The bot has no websocket; the server drives its moves.
+function createSinglePlayerRoom(playerName, difficulty, hostWs) {
+  const roomId = generateUniqueRoomCode();
+  const level = BOT_NAMES[difficulty] ? difficulty : 'medium';
+  const playerId = uuidv4();
+
+  const room = {
+    id: roomId,
+    code: roomId,
+    name: `Solo vs ${BOT_NAMES[level]}`,
+    passwordHash: null,
+    salt: null,
+    isSinglePlayer: true,
+    difficulty: level,
+    botPlayerNum: gameLogic.PLAYER2,
+    players: [
+      {
+        id: playerId,
+        name: playerName || 'Player 1',
+        color: 'yellow',
+        isHost: true,
+        ws: hostWs,
+        connected: true
+      },
+      {
+        id: `bot-${roomId}`,
+        name: BOT_NAMES[level],
+        color: 'red',
+        isHost: false,
+        isBot: true,
+        ws: null,
+        connected: true
+      }
+    ],
+    maxPlayers: 2,
+    gameState: null,
+    status: 'waiting',
+    timerState: null,
+    createdAt: Date.now(),
+    lastActivity: Date.now()
+  };
+
+  hostWs.roomId = roomId;
+  hostWs.playerId = playerId;
+  hostWs.playerColor = 'yellow';
+
+  rooms.set(roomId, room);
+  startCleanupInterval();
+
+  return { room, roomId, playerId };
+}
+
 function joinRoom(roomId, password, ws, playerName) {
   const room = rooms.get(roomId);
   if (!room) {
@@ -186,8 +245,12 @@ function cleanupInactiveRooms() {
       rooms.delete(id);
     } else if (room.status === 'waiting' && now - room.lastActivity > ROOM_MAX_INACTIVE) {
       rooms.delete(id);
-    } else if (room.status === 'playing' && room.players.every(p => !p.connected) && now - room.lastActivity > ROOM_MAX_INACTIVE) {
-      rooms.delete(id);
+    } else if (room.status === 'playing') {
+      // Only real (human) players keep a room alive; bots are always "connected".
+      const humans = room.players.filter(p => !p.isBot);
+      if (humans.length > 0 && humans.every(p => !p.connected) && now - room.lastActivity > ROOM_MAX_INACTIVE) {
+        rooms.delete(id);
+      }
     }
   }
 }
@@ -208,6 +271,7 @@ function stopCleanupInterval() {
 module.exports = {
   rooms,
   createRoom,
+  createSinglePlayerRoom,
   joinRoom,
   leaveRoom,
   getRoom,

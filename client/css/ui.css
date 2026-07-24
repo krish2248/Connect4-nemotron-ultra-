@@ -129,6 +129,36 @@ html, body {
   color: var(--text-muted);
 }
 
+.difficulty-group {
+  display: flex;
+  gap: 8px;
+}
+
+.difficulty-btn {
+  flex: 1;
+  padding: 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  background: var(--bg);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.difficulty-btn:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.difficulty-btn.active {
+  background: var(--yellow);
+  color: var(--bg);
+  border-color: var(--yellow);
+}
+
 .btn {
   display: inline-flex;
   align-items: center;

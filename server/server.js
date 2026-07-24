@@ -70,7 +70,7 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
-    rooms.handleDisconnect(ws);
+    rooms.leaveRoom(ws);
   });
 
   ws.on('error', (err) => {
