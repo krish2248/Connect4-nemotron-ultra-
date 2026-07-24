@@ -6,6 +6,30 @@
 
 ---
 
+## ▶️ Resume Here (Tomorrow)
+
+**Last commit:** `ee19b10` — *Add single-player AI opponent (Easy/Medium/Hard)*.
+Working tree is clean and pushed to `origin/master`; Render auto-deploys on push.
+
+**What just shipped:** single-player AI mode (`server/ai.js`, minimax) + the fix
+for the blocking turn-engine reference bugs. See "Single-Player AI" and "Bugs Fixed #0".
+
+**Verify first (couldn't test in-browser this session):**
+1. Load the live site → "Play vs Computer" → pick a difficulty → confirm the bot
+   plays, wins/blocks sensibly, and Play Again / Main Menu work.
+2. Confirm online 2-player still works end-to-end (it was silently broken before
+   the turn-engine fix — should be fine now, but eyeball it with two tabs).
+3. Check the difficulty selector styling looks right on mobile + desktop.
+
+**How to run locally:** `cd server && npm install && npm start` → open
+http://localhost:3000. Quick sims live in the scratchpad from this session
+(bot-vs-random games + a live WS round-trip) if regression testing is needed.
+
+**Next candidates (pick one):** thinking indicator on the bot panel during its
+turn · spectator mode · chat/emotes · ELO/ranking · custom themes.
+
+---
+
 ## What Was Built
 A real-time 2-player online Connect 4 game with:
 - Node.js + `ws` WebSocket server (single port, serves static files)
