@@ -261,6 +261,11 @@ function scheduleBotMove(room) {
     if (!room.gameState || room.gameState.winner || room.gameState.isDraw) return;
     if (room.gameState.currentPlayer !== botNum) return;
 
+    const human = room.players.find(p => !p.isBot);
+    if (human?.ws?.readyState === 1) {
+      send(human.ws, 'botThinking', { thinking: true });
+    }
+
     let col = ai.chooseMove(room.gameState.board, botNum, room.difficulty);
     if (col === null || col === undefined) {
       const valid = gameLogic.getValidMoves(room.gameState.board);
@@ -268,6 +273,10 @@ function scheduleBotMove(room) {
       col = valid[0];
     }
     applyMove(room, col, botNum);
+
+    if (human?.ws?.readyState === 1) {
+      send(human.ws, 'botThinking', { thinking: false });
+    }
   }, delay);
 }
 

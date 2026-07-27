@@ -123,6 +123,9 @@ const App = {
       case 'stateSync':
         this.handleStateSync(payload);
         break;
+      case 'botThinking':
+        this.updateBotThinking(payload.thinking);
+        break;
       case 'coinError':
         this.handleCoinError(payload);
         break;
@@ -233,6 +236,13 @@ const App = {
       this.timer.setActive(this.myTurn);
     }
 
+    // Show thinking indicator for bot in single-player mode
+    const isBotTurn = this.singlePlayer && payload.currentPlayer === 2;
+    const p2Panel = document.getElementById('player2-panel');
+    if (p2Panel) {
+      p2Panel.classList.toggle('thinking', isBotTurn);
+    }
+
     if (this.myTurn) {
       this.moveStartTime = Date.now();
       this.audio.playButton();
@@ -325,6 +335,14 @@ const App = {
     } else {
       this.state = 'waiting';
       this.render();
+    }
+  },
+
+  updateBotThinking(thinking) {
+    if (!this.singlePlayer) return;
+    const panel = document.getElementById('player2-panel');
+    if (panel) {
+      panel.classList.toggle('thinking', thinking);
     }
   },
 
@@ -659,6 +677,9 @@ const App = {
             <div class="player-name" id="player2-name">Player 2</div>
           </div>
           <div class="timer-ring-container" id="timer2-ring"></div>
+          <div class="thinking-indicator" id="player2-thinking" aria-live="polite">
+            <span>.</span><span>.</span><span>.</span>
+          </div>
         </div>
       </div>
       
