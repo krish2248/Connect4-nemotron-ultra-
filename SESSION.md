@@ -8,25 +8,20 @@
 
 ## ▶️ Resume Here (Tomorrow)
 
-**Last commit:** `ee19b10` — *Add single-player AI opponent (Easy/Medium/Hard)*.
+**Last commit:** `ebc9c26` — *Add bot thinking indicator for single-player mode*.
 Working tree is clean and pushed to `origin/master`; Render auto-deploys on push.
 
-**What just shipped:** single-player AI mode (`server/ai.js`, minimax) + the fix
-for the blocking turn-engine reference bugs. See "Single-Player AI" and "Bugs Fixed #0".
+**What just shipped:** thinking indicator on the bot panel during its turn (pulsing dots animation). The server sends `botThinking` WS messages when the AI starts/stops thinking, and the client shows a subtle animated "..." indicator on the Computer (red) player panel.
 
-**Verify first (couldn't test in-browser this session):**
-1. Load the live site → "Play vs Computer" → pick a difficulty → confirm the bot
-   plays, wins/blocks sensibly, and Play Again / Main Menu work.
-2. Confirm online 2-player still works end-to-end (it was silently broken before
-   the turn-engine fix — should be fine now, but eyeball it with two tabs).
-3. Check the difficulty selector styling looks right on mobile + desktop.
+**Verify:**
+1. Load the live site → "Play vs Computer" → pick a difficulty → confirm the "..." thinking dots appear on the Computer panel during its turn, disappear when it plays.
+2. Confirm online 2-player still works end-to-end.
+3. Check the thinking indicator styling on mobile + desktop (respects `prefers-reduced-motion`).
 
 **How to run locally:** `cd server && npm install && npm start` → open
-http://localhost:3000. Quick sims live in the scratchpad from this session
-(bot-vs-random games + a live WS round-trip) if regression testing is needed.
+http://localhost:3000.
 
-**Next candidates (pick one):** thinking indicator on the bot panel during its
-turn · spectator mode · chat/emotes · ELO/ranking · custom themes.
+**Next candidates (pick one):** spectator mode · chat/emotes · ELO/ranking · custom themes.
 
 ---
 
@@ -73,6 +68,7 @@ A real-time 2-player online Connect 4 game with:
 ## Features Implemented
 - ✅ Real-time 2-player via WebSocket
 - ✅ **Single-player vs AI** (Easy / Medium / Hard) — server-side minimax opponent
+- ✅ **Bot thinking indicator** — animated "..." on Computer panel during AI turn
 - ✅ Human-readable 6-char room codes
 - ✅ Password-protected rooms (SHA-256 + salt)
 - ✅ 30s turn timer (server-authoritative, synced to both clients)
@@ -119,6 +115,7 @@ playerReconnected: { playerId }
 rematchOffered: { fromPlayerId }
 rematchAccepted: { gameState }
 stateSync: { gameState, timerState }
+botThinking: { thinking: boolean }        # single-player only
 ```
 
 ---
