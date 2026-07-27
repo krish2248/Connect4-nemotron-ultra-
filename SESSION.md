@@ -8,20 +8,20 @@
 
 ## ▶️ Resume Here (Tomorrow)
 
-**Last commit:** `ebc9c26` — *Add bot thinking indicator for single-player mode*.
+**Last commit:** `f3d55e5` — *Add spectator mode*.
 Working tree is clean and pushed to `origin/master`; Render auto-deploys on push.
 
-**What just shipped:** thinking indicator on the bot panel during its turn (pulsing dots animation). The server sends `botThinking` WS messages when the AI starts/stops thinking, and the client shows a subtle animated "..." indicator on the Computer (red) player panel.
+**What just shipped:** Spectator mode — users can join any active game as a spectator via room code. The server broadcasts all game events (moves, turn changes, game end) to spectators. Spectator UI shows the board with player panels but no turn timer or drop interaction.
 
 **Verify:**
-1. Load the live site → "Play vs Computer" → pick a difficulty → confirm the "..." thinking dots appear on the Computer panel during its turn, disappear when it plays.
+1. Load the live site → "Join Server" → enter a room code that's currently playing → choose a spectator name → confirm you see the board and live updates.
 2. Confirm online 2-player still works end-to-end.
-3. Check the thinking indicator styling on mobile + desktop (respects `prefers-reduced-motion`).
+3. Check spectator UI on mobile + desktop (respects `prefers-reduced-motion`).
 
 **How to run locally:** `cd server && npm install && npm start` → open
 http://localhost:3000.
 
-**Next candidates (pick one):** spectator mode · chat/emotes · ELO/ranking · custom themes.
+**Next candidates (pick one):** chat/emotes · ELO/ranking · custom themes.
 
 ---
 
@@ -69,6 +69,7 @@ A real-time 2-player online Connect 4 game with:
 - ✅ Real-time 2-player via WebSocket
 - ✅ **Single-player vs AI** (Easy / Medium / Hard) — server-side minimax opponent
 - ✅ **Bot thinking indicator** — animated "..." on Computer panel during AI turn
+- ✅ **Spectator mode** — watch any active game by joining with room code
 - ✅ Human-readable 6-char room codes
 - ✅ Password-protected rooms (SHA-256 + salt)
 - ✅ 30s turn timer (server-authoritative, synced to both clients)
@@ -93,6 +94,7 @@ A real-time 2-player online Connect 4 game with:
 createRoom: { name, password, playerName }
 createSinglePlayer: { playerName, difficulty }   # difficulty: easy|medium|hard
 joinRoom: { roomId, password, playerName }
+joinSpectator: { roomId, spectatorName }
 dropCoin: { column }
 requestRematch: { roomId }
 requestReconnect: { roomId, playerId }
@@ -103,6 +105,7 @@ requestState: { roomId }
 ```
 roomCreated: { roomId, roomName, playerId, playerColor, isHost, singlePlayer?, difficulty?, opponentName? }
 roomJoined: { roomId, roomName, players, playerId, playerColor, gameState }
+spectatorJoined: { roomId, roomName, spectatorId, players, gameState }
 roomError: { code, message }
 gameStart: { gameState, countdown: 3 }
 coinDropped: { column, row, player, board }
@@ -223,12 +226,10 @@ Open Render URL on desktop + phone. Create room on one, join with 6-char code on
 ---
 
 ## Next Steps (if continuing)
-1. Add spectator mode
-2. Add chat/emotes
-3. Add ELO/ranking system
-4. Add custom themes
-5. Show a subtle "thinking…" indicator on the bot panel during its turn
+1. Add chat/emotes
+2. Add ELO/ranking system
+3. Add custom themes
 
 ---
 
-*Last updated: 2026-07-24 — Added single-player AI opponent (minimax, 3 difficulties) and fixed the blocking turn-engine reference bugs. Game live at https://connect4-nemotron-ultra.onrender.com*
+*Last updated: 2026-07-28 — Added spectator mode (join any game by room code) and bot thinking indicator. Game live at https://connect4-nemotron-ultra.onrender.com*
