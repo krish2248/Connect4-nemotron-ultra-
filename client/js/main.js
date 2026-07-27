@@ -123,6 +123,9 @@ const App = {
       case 'stateSync':
         this.handleStateSync(payload);
         break;
+      case 'spectatorJoined':
+        this.handleSpectatorJoined(payload);
+        break;
       case 'botThinking':
         this.updateBotThinking(payload.thinking);
         break;
@@ -164,6 +167,17 @@ const App = {
     } else {
       this.state = 'waiting';
     }
+    this.render();
+  },
+
+  handleSpectatorJoined(payload) {
+    this.roomId = payload.roomId;
+    this.spectatorId = payload.spectatorId;
+    this.isSpectator = true;
+    this.playerColor = null; // Spectators don't have a color
+    this.opponentName = 'Spectating';
+    this.gameState = payload.gameState;
+    this.state = 'spectating';
     this.render();
   },
 
@@ -485,6 +499,9 @@ const App = {
       case 'playing':
         app.appendChild(this.createGameScreen());
         break;
+      case 'spectating':
+        app.appendChild(this.createSpectatorScreen());
+        break;
       case 'gameover':
         break;
     }
@@ -545,6 +562,18 @@ const App = {
           <input type="text" id="join-player-name" placeholder="Player 2" maxlength="16" required>
         </div>
         <button class="btn btn-secondary" id="btn-join-room">Join Server</button>
+
+        <div class="divider">Spectate</div>
+        
+        <div class="form-group">
+          <label for="spectate-room-id">Room Code</label>
+          <input type="text" id="spectate-room-id" placeholder="ABC123" maxlength="6" style="text-transform: uppercase;">
+        </div>
+        <div class="form-group">
+          <label for="spectate-name">Your Name</label>
+          <input type="text" id="spectate-name" placeholder="Spectator" maxlength="16" required>
+        </div>
+        <button class="btn btn-secondary" id="btn-spectate">Spectate Game</button>
       </div>
     `;
 
@@ -576,6 +605,10 @@ const App = {
       const joinPlayerName = screen.querySelector('#join-player-name');
       const btnJoin = screen.querySelector('#btn-join-room');
 
+      const spectateRoomId = screen.querySelector('#spectate-room-id');
+      const spectateName = screen.querySelector('#spectate-name');
+      const btnSpectate = screen.querySelector('#btn-spectate');
+
       soloPlayerName.addEventListener('keypress', (e) => { if (e.key === 'Enter') btnPlayComputer.click(); });
 
       btnCreate.addEventListener('click', () => {
@@ -586,12 +619,20 @@ const App = {
         this.joinRoom(joinRoomId.value.toUpperCase(), joinPassword.value, joinPlayerName.value);
       });
 
+      btnSpectate.addEventListener('click', () => {
+        this.joinSpectator(spectateRoomId.value.toUpperCase(), spectateName.value);
+      });
+
       [createName, createPassword, createPlayerName].forEach(el => {
         el.addEventListener('keypress', (e) => { if (e.key === 'Enter') btnCreate.click(); });
       });
 
       [joinRoomId, joinPassword, joinPlayerName].forEach(el => {
         el.addEventListener('keypress', (e) => { if (e.key === 'Enter') btnJoin.click(); });
+      });
+
+      [spectateRoomId, spectateName].forEach(el => {
+        el.addEventListener('keypress', (e) => { if (e.key === 'Enter') btnSpectate.click(); });
       });
 
       soloPlayerName.focus();
@@ -720,6 +761,105 @@ const App = {
     return screen;
   },
 
+  createSpectatorScreen() {
+    const screen = document.createElement('div');
+    screen.className = 'screen active board-screen';
+    screen.innerHTML = `
+      <div class="board-header">
+        <div class="room-info">
+          <span class="room-name">Connect 4 — Spectating</span>
+          <span class="room-code" id="game-room-code">${this.roomId}</span>
+        </div>
+      </div>
+      
+      <div class="board-wrapper">
+        <div id="board-frame" class="board-frame"></div>
+      </div>
+      
+      <div class="game-header" style="display: flex; justify-content: space-between; width: 100%; max-width: 500px; margin-top: 12px;">
+        <div class="player-panel" id="player1-panel">
+          <div class="player-avatar yellow"></div>
+          <div class="player-info">
+            <div class="player-name" id="player1-name">Player 1</div>
+          </div>
+          <div class="timer-ring-container" id="timer1-ring"></div>
+        </div>
+        <div class="player-panel" id="player2-panel">
+          <div class="player-avatar red"></div>
+          <div class="player-info">
+            <div class="player-name" id="player2-name">Player 2</div>
+          </div>
+          <div class="timer-ring-container" id="timer2-ring"></div>
+          <div class="thinking-indicator" id="player2-thinking" aria-live="polite">
+            <span>.</span><span>.</span><span>.</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="game-actions" style="margin-top: 16px;">
+        <button class="btn btn-secondary stats-btn" id="btn-stats">Stats & Achievements</button>
+        <button class="btn btn-ghost" id="btn-leave-game">Leave</button>
+      </div>
+    `;
+
+    setTimeout(() => {
+      const boardEl = screen.querySelector('#board-frame');
+      if (boardEl && !this.board) {
+        this.board = new Board(boardEl, () => {}); // No drop callback for spectators
+      } else if (this.board) {
+        this.board.render();
+      }
+
+      const timer1El = screen.querySelector('#timer1-ring');
+      const timer2El = screen.querySelector('#timer2-ring');
+      if (timer1El && !this.timer) {
+        this.timer = new TimerRing(timer1El);
+      }
+
+      if (this.gameState && this.timer) {
+        this.timer.start(this.timerState?.timeRemaining || 30);
+        this.timer.setActive(false); // Spectators don't have active turns
+      }
+
+      this.updateSpectatorPanels();
+
+      const btnStats = screen.querySelector('#btn-stats');
+      const btnLeave = screen.querySelector('#btn-leave-game');
+
+      btnStats.addEventListener('click', () => this.showStatsModal());
+      btnLeave.addEventListener('click', () => this.disconnect());
+    }, 0);
+
+    return screen;
+  },
+
+  updateSpectatorPanels() {
+    const p1 = document.getElementById('player1-panel');
+    const p2 = document.getElementById('player2-panel');
+    const n1 = document.getElementById('player1-name');
+    const n2 = document.getElementById('player2-name');
+
+    if (p1 && p2 && n1 && n2 && this.gameState) {
+      n1.textContent = this.player1Name || 'Player 1';
+      n2.textContent = this.player2Name || 'Player 2';
+
+      const currentPlayer = this.gameState.currentPlayer;
+      p1.classList.toggle('active', currentPlayer === 1);
+      p2.classList.toggle('active', currentPlayer === 2);
+    }
+  },
+
+  handleSpectatorJoined(payload) {
+    this.roomId = payload.roomId;
+    this.spectatorId = payload.spectatorId;
+    this.isSpectator = true;
+    this.player1Name = payload.players[0]?.name || 'Player 1';
+    this.player2Name = payload.players[1]?.name || 'Player 2';
+    this.gameState = payload.gameState;
+    this.state = 'spectating';
+    this.render();
+  },
+
   updatePlayerPanels() {
     const isYellow = this.playerColor === 'yellow';
     const p1 = document.getElementById('player1-panel');
@@ -802,12 +942,20 @@ const App = {
     this.ws.send('joinRoom', { roomId, password, playerName: this.playerName });
   },
 
+  joinSpectator(roomId, spectatorName) {
+    this.spectatorName = spectatorName || `Spectator ${Math.floor(Math.random() * 1000)}`;
+    this.ws.send('joinSpectator', { roomId, spectatorName: this.spectatorName });
+  },
+
   disconnect() {
     this.ui.closeAllModals();
     if (this.ws) this.ws.close();
     this.state = 'landing';
     this.roomId = null;
     this.playerId = null;
+    this.spectatorId = null;
+    this.isSpectator = false;
+    this.spectatorName = null;
     this.gameState = null;
     this.timerState = null;
     this.singlePlayer = false;

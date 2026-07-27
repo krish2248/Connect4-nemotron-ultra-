@@ -6,6 +6,7 @@ const timer = require('./timer');
 const rooms = new Map();
 const ROOM_CLEANUP_INTERVAL = 60000;
 const ROOM_MAX_INACTIVE = 5 * 60 * 1000;
+const MAX_SPECTATORS = 10;
 
 function generateRoomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -50,6 +51,7 @@ function createRoom(name, password, hostWs, hostName) {
       ws: hostWs,
       connected: true
     }],
+    spectators: [],
     maxPlayers: 2,
     gameState: null,
     status: 'waiting',
@@ -109,6 +111,7 @@ function createSinglePlayerRoom(playerName, difficulty, hostWs) {
         connected: true
       }
     ],
+    spectators: [],
     maxPlayers: 2,
     gameState: null,
     status: 'waiting',
@@ -197,6 +200,59 @@ function leaveRoom(ws) {
   room.lastActivity = Date.now();
 }
 
+function joinAsSpectator(roomId, ws, spectatorName) {
+  const room = rooms.get(roomId);
+  if (!room) {
+    return { error: 'roomNotFound', message: 'Room not found' };
+  }
+
+  if (room.status === 'finished') {
+    return { error: 'gameFinished', message: 'Game already finished' };
+  }
+
+  if (room.spectators.length >= MAX_SPECTATORS) {
+    return { error: 'roomFull', message: 'Spectator limit reached' };
+  }
+
+  const existingSpectator = room.spectators.find(s => s.name === spectatorName && s.connected);
+  if (existingSpectator) {
+    return { error: 'nameTaken', message: 'Name already taken' };
+  }
+
+  const spectatorId = uuidv4();
+  const spectator = {
+    id: spectatorId,
+    name: spectatorName || `Spectator ${room.spectators.length + 1}`,
+    ws,
+    connected: true,
+    joinedAt: Date.now()
+  };
+
+  room.spectators.push(spectator);
+  room.lastActivity = Date.now();
+
+  ws.roomId = roomId;
+  ws.spectatorId = spectatorId;
+  ws.isSpectator = true;
+
+  const gameState = room.gameState ? gameLogic.serializeForClient(room.gameState, null) : null;
+
+  return { room, spectatorId, gameState, players: room.players.map(p => ({ id: p.id, name: p.name, color: p.color, isHost: p.isHost })) };
+}
+
+function leaveSpectator(ws) {
+  const room = rooms.get(ws.roomId);
+  if (!room) return;
+
+  const spectator = room.spectators.find(s => s.id === ws.spectatorId);
+  if (spectator) {
+    spectator.connected = false;
+    spectator.ws = null;
+  }
+
+  room.lastActivity = Date.now();
+}
+
 function getRoom(roomId) {
   return rooms.get(roomId);
 }
@@ -241,6 +297,9 @@ function handleReconnect(ws, roomId, playerId) {
 function cleanupInactiveRooms() {
   const now = Date.now();
   for (const [id, room] of rooms.entries()) {
+    // Clean up disconnected spectators
+    room.spectators = room.spectators.filter(s => s.connected || s.ws?.readyState === 1);
+
     if (room.players.length === 0 && now - room.lastActivity > ROOM_MAX_INACTIVE) {
       rooms.delete(id);
     } else if (room.status === 'waiting' && now - room.lastActivity > ROOM_MAX_INACTIVE) {
@@ -273,7 +332,9 @@ module.exports = {
   createRoom,
   createSinglePlayerRoom,
   joinRoom,
+  joinAsSpectator,
   leaveRoom,
+  leaveSpectator,
   getRoom,
   getRoomByCode,
   handleReconnect,

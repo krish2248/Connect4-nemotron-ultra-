@@ -16,6 +16,20 @@ function broadcast(room, type, payload, excludeWs = null) {
       send(player.ws, type, payload);
     }
   });
+  room.spectators.forEach(spectator => {
+    if (spectator.ws && spectator.ws.readyState === 1 && spectator.ws !== excludeWs) {
+      send(spectator.ws, type, payload);
+    }
+  });
+}
+
+function broadcastToSpectators(room, type, payload) {
+  if (!room) return;
+  room.spectators.forEach(spectator => {
+    if (spectator.ws && spectator.ws.readyState === 1) {
+      send(spectator.ws, type, payload);
+    }
+  });
 }
 
 function handleMessage(ws, message, roomsModule) {
@@ -30,6 +44,9 @@ function handleMessage(ws, message, roomsModule) {
       break;
     case 'joinRoom':
       handleJoinRoom(ws, payload);
+      break;
+    case 'joinSpectator':
+      handleJoinSpectator(ws, payload);
       break;
     case 'dropCoin':
       handleDropCoin(ws, payload);
@@ -119,6 +136,26 @@ function handleJoinRoom(ws, payload) {
   }
 }
 
+function handleJoinSpectator(ws, payload) {
+  const { roomId, spectatorName } = payload;
+  const result = rooms.joinAsSpectator(roomId, ws, spectatorName);
+
+  if (result.error) {
+    send(ws, 'roomError', { code: result.error, message: result.message });
+    return;
+  }
+
+  const { room, spectatorId, gameState, players } = result;
+
+  send(ws, 'spectatorJoined', {
+    roomId: room.id,
+    roomName: room.name,
+    spectatorId,
+    players,
+    gameState
+  });
+}
+
 function startGame(room) {
   room.gameState = gameLogic.createGameState();
   room.status = 'playing';
@@ -126,11 +163,21 @@ function startGame(room) {
 
   const state1 = gameLogic.serializeForClient(room.gameState, room.players[0].id);
   const state2 = gameLogic.serializeForClient(room.gameState, room.players[1].id);
+  const spectatorState = gameLogic.serializeForClient(room.gameState, null);
 
   room.players.forEach((player, i) => {
     if (player.ws && player.ws.readyState === 1) {
       send(player.ws, 'gameStart', {
         gameState: i === 0 ? state1 : state2,
+        countdown: 3
+      });
+    }
+  });
+
+  room.spectators.forEach(spectator => {
+    if (spectator.ws && spectator.ws.readyState === 1) {
+      send(spectator.ws, 'gameStart', {
+        gameState: spectatorState,
         countdown: 3
       });
     }
@@ -206,6 +253,7 @@ function applyMove(room, column, playerNum) {
 function broadcastMove(room, column, row, playerNum) {
   const state1 = gameLogic.serializeForClient(room.gameState, room.players[0].id);
   const state2 = gameLogic.serializeForClient(room.gameState, room.players[1].id);
+  const spectatorState = gameLogic.serializeForClient(room.gameState, null);
 
   room.players.forEach((player, i) => {
     if (player.ws && player.ws.readyState === 1) {
@@ -216,6 +264,18 @@ function broadcastMove(room, column, row, playerNum) {
         board: room.gameState.board
       });
       send(player.ws, 'gameState', i === 0 ? state1 : state2);
+    }
+  });
+
+  room.spectators.forEach(spectator => {
+    if (spectator.ws && spectator.ws.readyState === 1) {
+      send(spectator.ws, 'coinDropped', {
+        column,
+        row,
+        player: playerNum,
+        board: room.gameState.board
+      });
+      send(spectator.ws, 'gameState', spectatorState);
     }
   });
 }
@@ -230,6 +290,17 @@ function scheduleGameEnd(room) {
           winningCoords: room.gameState.winningCoords,
           isDraw: room.gameState.isDraw,
           stats: i === 0 ? stats.player1 : stats.player2
+        });
+      }
+    });
+
+    room.spectators.forEach(spectator => {
+      if (spectator.ws && spectator.ws.readyState === 1) {
+        send(spectator.ws, 'gameEnd', {
+          winner: room.gameState.winner,
+          winningCoords: room.gameState.winningCoords,
+          isDraw: room.gameState.isDraw,
+          stats: null
         });
       }
     });

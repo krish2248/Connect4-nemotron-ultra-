@@ -70,7 +70,11 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
-    rooms.leaveRoom(ws);
+    if (ws.isSpectator) {
+      rooms.leaveSpectator(ws);
+    } else {
+      rooms.leaveRoom(ws);
+    }
   });
 
   ws.on('error', (err) => {
