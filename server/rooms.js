@@ -29,7 +29,14 @@ function hashPassword(password, salt) {
   return crypto.createHash('sha256').update(salt + password).digest('hex');
 }
 
-function createRoom(name, password, hostWs, hostName, rating) {
+// Avatars are short emoji strings picked client-side; anything else is dropped.
+function validAvatar(avatar) {
+  if (typeof avatar !== 'string') return null;
+  const trimmed = avatar.trim();
+  return trimmed.length >= 1 && trimmed.length <= 8 ? trimmed : null;
+}
+
+function createRoom(name, password, hostWs, hostName, rating, avatar) {
   // The room id IS the shareable 6-char code (uppercase A-Z/2-9).
   const roomId = generateUniqueRoomCode();
   const roomCode = roomId;
@@ -49,6 +56,7 @@ function createRoom(name, password, hostWs, hostName, rating) {
       color: 'yellow',
       isHost: true,
       rating: Number.isFinite(rating) ? Math.max(100, Math.min(3000, Math.round(rating))) : null,
+      avatar: validAvatar(avatar),
       ws: hostWs,
       connected: true
     }],
@@ -79,7 +87,7 @@ const BOT_NAMES = {
 
 // Create a single-player room: the human is player 1 (yellow), an AI bot is
 // player 2 (red). The bot has no websocket; the server drives its moves.
-function createSinglePlayerRoom(playerName, difficulty, hostWs, rating) {
+function createSinglePlayerRoom(playerName, difficulty, hostWs, rating, avatar) {
   const roomId = generateUniqueRoomCode();
   const level = BOT_NAMES[difficulty] ? difficulty : 'medium';
   const playerId = uuidv4();
@@ -100,6 +108,7 @@ function createSinglePlayerRoom(playerName, difficulty, hostWs, rating) {
         color: 'yellow',
         isHost: true,
         rating: Number.isFinite(rating) ? Math.max(100, Math.min(3000, Math.round(rating))) : null,
+        avatar: validAvatar(avatar),
         ws: hostWs,
         connected: true
       },
@@ -109,6 +118,7 @@ function createSinglePlayerRoom(playerName, difficulty, hostWs, rating) {
         color: 'red',
         isHost: false,
         isBot: true,
+        avatar: '🤖',
         ws: null,
         connected: true
       }
@@ -132,7 +142,7 @@ function createSinglePlayerRoom(playerName, difficulty, hostWs, rating) {
   return { room, roomId, playerId };
 }
 
-function joinRoom(roomId, password, ws, playerName, rating) {
+function joinRoom(roomId, password, ws, playerName, rating, avatar) {
   const room = rooms.get(roomId);
   if (!room) {
     return { error: 'roomNotFound', message: 'Room not found' };
@@ -170,6 +180,7 @@ function joinRoom(roomId, password, ws, playerName, rating) {
     color,
     isHost: false,
     rating: Number.isFinite(rating) ? Math.max(100, Math.min(3000, Math.round(rating))) : null,
+    avatar: validAvatar(avatar),
     ws,
     connected: true
   };
@@ -203,7 +214,7 @@ function leaveRoom(ws) {
   room.lastActivity = Date.now();
 }
 
-function joinAsSpectator(roomId, ws, spectatorName) {
+function joinAsSpectator(roomId, ws, spectatorName, avatar) {
   const room = rooms.get(roomId);
   if (!room) {
     return { error: 'roomNotFound', message: 'Room not found' };
@@ -226,6 +237,7 @@ function joinAsSpectator(roomId, ws, spectatorName) {
   const spectator = {
     id: spectatorId,
     name: spectatorName || `Spectator ${room.spectators.length + 1}`,
+    avatar: validAvatar(avatar),
     ws,
     connected: true,
     joinedAt: Date.now()
@@ -240,7 +252,7 @@ function joinAsSpectator(roomId, ws, spectatorName) {
 
   const gameState = room.gameState ? gameLogic.serializeForClient(room.gameState, null) : null;
 
-  return { room, spectatorId, gameState, players: room.players.map(p => ({ id: p.id, name: p.name, color: p.color, isHost: p.isHost, rating: Number.isFinite(p.rating) ? p.rating : null })) };
+  return { room, spectatorId, gameState, players: room.players.map(p => ({ id: p.id, name: p.name, color: p.color, isHost: p.isHost, rating: Number.isFinite(p.rating) ? p.rating : null, avatar: p.avatar || null })) };
 }
 
 function leaveSpectator(ws) {

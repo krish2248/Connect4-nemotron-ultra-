@@ -83,7 +83,8 @@ export class Chat {
 
     const nameSpan = document.createElement('span');
     nameSpan.className = `chat-name${msg.senderColor ? ` ${msg.senderColor}` : ''}${msg.isSpectator ? ' spectator' : ''}`;
-    nameSpan.textContent = msg.senderName + (msg.isSpectator ? ' 👁' : '') + ':';
+    const prefix = msg.senderAvatar ? `${msg.senderAvatar} ` : '';
+    nameSpan.textContent = `${prefix}${msg.senderName}${msg.isSpectator ? ' 👁' : ''}:`;
 
     const textSpan = document.createElement('span');
     textSpan.className = 'chat-text';
