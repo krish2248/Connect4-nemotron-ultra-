@@ -6,6 +6,7 @@ const { v4: uuidv4 } = require('uuid');
 
 const rooms = require('./rooms');
 const { handleMessage, broadcastSpectatorCount } = require('./websocket');
+const tournament = require('./tournament');
 const { cleanupInactiveRooms: cleanupRooms } = require('./rooms');
 
 const PORT = process.env.PORT || 3000;
@@ -76,6 +77,7 @@ wss.on('connection', (ws) => {
     } else {
       rooms.leaveRoom(ws);
     }
+    tournament.handleDisconnect(ws);
   });
 
   ws.on('error', (err) => {

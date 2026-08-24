@@ -8,23 +8,26 @@
 
 ## ▶️ Resume Here (Next Time)
 
-**Last commit:** `b4c537b` — *Add chat/emotes, ELO ranking, and custom themes* (pushed; Render auto-deploys).
+**Last commit:** tournament + polish batch (pushed; Render auto-deploys).
 
-**What just shipped:** Polish pass completing the feature set — last-move ring
-highlight on the board, sound on/off toggle (landing + game + spectator screens,
-persisted), remembered player names per form, and an ELO/tier chip on the
-landing screen. README feature list refreshed.
+**What just shipped:** The four "next candidates" are built — beginner move
+hints, live spectator count, profile avatars, and full 4-player
+single-elimination tournaments with an auto-running bracket. Two automated
+WebSocket suites (34 checks) cover the whole system end-to-end.
 
 **Verify:**
-1. Play a move → the dropped coin shows a white ring until the next move.
-2. Click 🔊 Sound on any screen → label flips to 🔇 and stays off after refresh.
-3. Enter your name once → it's prefilled on next visit; landing shows your ⭐ rating + tier.
-4. Full regression: two tabs create/join/chat/play — all good (20/20 automated WS tests).
+1. In-game 💡 Hint → green column = win now, red = must block, yellow = safe move.
+2. Spectator joins your game → header shows 👁 count to everyone.
+3. Landing → pick an avatar → it shows on panels and chat lines for both players.
+4. Landing → Join Tournament ×4 (tabs/devices) → bracket starts, matches launch automatically, losers watch the final, champion is announced.
+
+**Known limitations:** tournaments don't survive a mid-bracket page refresh
+(the match itself does reconnect); no walkover timer for absent finalists.
 
 **How to run locally:** `cd server && npm install && npm start` → open
 http://localhost:3000.
 
-**Remaining ideas (optional):** tournament brackets · move hints for beginners · profile avatars · spectator count display.
+**Next candidates (pick one — tomorrow's plan):** 8-player brackets · rematch ladders · daily challenges · ELO leaderboard page.
 
 ---
 
@@ -45,8 +48,9 @@ A real-time 2-player online Connect 4 game with:
 | `rooms.js` | Room management, SHA-256 password hashing, 5-min auto-cleanup, single-player bot rooms |
 | `gameLogic.js` | Authoritative 7×6 board, win/draw detection (4 directions) |
 | `timer.js` | 30s server-authoritative turn timer, timeout = skip turn |
-| `websocket.js` | C2S/S2C message routing, `applyMove`/`advanceTurn` turn engine, AI move scheduling |
+| `websocket.js` | C2S/S2C message routing, `applyMove`/`advanceTurn` turn engine, AI move scheduling, internal tournament rooms |
 | `ai.js` | Single-player AI: minimax + alpha-beta, difficulty-based depth, immediate win/block |
+| `tournament.js` | 4-player single-elimination brackets: lobby, seeding, auto-launched matches, results, champion |
 
 ### Client (`/client`)
 | File | Purpose |
@@ -83,6 +87,10 @@ A real-time 2-player online Connect 4 game with:
 - ✅ **Last-move highlight** — white ring on the most recent coin
 - ✅ **Sound toggle** — 🔊/🔇 button on landing, game and spectator screens; preference persisted
 - ✅ **Remembered names** — per-form name memory + profile name drives the landing ELO chip
+- ✅ **Beginner move hints** — 💡 button: green (win now) / red (must block) / yellow (safe move), client-side only
+- ✅ **Spectator count** — live 👁 counter in the game header, broadcast on join/leave
+- ✅ **Profile avatars** — emoji picker (12 options); shown on player panels and chat lines
+- ✅ **Tournaments** — 4-player single-elimination: shared lobby auto-starts at 4, bracket seeds randomly, matches launch in private rooms automatically, draws replay, losers watch remaining matches via bracket links, champion announced to everyone
 - ✅ Human-readable 6-char room codes
 - ✅ Password-protected rooms (SHA-256 + salt)
 - ✅ 30s turn timer (server-authoritative, synced to both clients)
@@ -104,12 +112,14 @@ A real-time 2-player online Connect 4 game with:
 
 ### Client → Server
 ```
-createRoom: { name, password, playerName, rating }
-createSinglePlayer: { playerName, difficulty, rating }   # difficulty: easy|medium|hard
-joinRoom: { roomId, password, playerName, rating }
-joinSpectator: { roomId, spectatorName }
+createRoom: { name, password, playerName, rating, avatar }
+createSinglePlayer: { playerName, difficulty, rating, avatar }   # difficulty: easy|medium|hard
+joinRoom: { roomId, password, playerName, rating, avatar }
+joinSpectator: { roomId, spectatorName, avatar }
 dropCoin: { column }
 sendChat: { roomId, text, isEmote }   # isEmote: short string or null
+joinTournament: { playerName, avatar, rating }
+leaveTournament: {}
 requestRematch: { roomId }
 requestReconnect: { roomId, playerId }
 requestState: { roomId }
@@ -119,9 +129,9 @@ ping                                   # client heartbeat (no reply)
 ### Server → Client
 ```
 roomCreated: { roomId, roomName, playerId, playerColor, isHost, singlePlayer?, difficulty?, opponentName? }
-roomJoined: { roomId, roomName, players[{id,name,color,isHost,rating}], playerId, playerColor, gameState }
-spectatorJoined: { roomId, roomName, spectatorId, players, gameState }
-roomError: { code, message }
+roomJoined: { roomId, roomName, players[{id,name,color,isHost,rating,avatar}], playerId, playerColor, gameState }
+spectatorJoined: { roomId, roomName, spectatorId, players, gameState, spectatorCount }
+roomError: { code, message }           # incl. roomLocked for private tournament rooms
 gameStart: { gameState, countdown: 3 }
 coinDropped: { column, row, player, board }
 gameState: { board, currentPlayer, winner, winningCoords, isDraw, moveCount }
@@ -132,10 +142,14 @@ playerDisconnected: { playerId }
 playerReconnected: { playerId }
 rematchOffered: { fromPlayerId }
 rematchAccepted: { gameState }
-stateSync: { gameState, timerState, roomId?, playerColor?, playerName?, opponentName?, opponentRating? }
+stateSync: { gameState, timerState, roomId?, playerColor?, playerName?, playerAvatar?, opponentName?, opponentAvatar?, opponentRating? }
 botThinking: { thinking: boolean }        # single-player only
-chatMessage: { senderId, senderName, senderColor, text, isEmote, isSpectator, timestamp }
+chatMessage: { senderId, senderName, senderColor, senderAvatar, text, isEmote, isSpectator, timestamp }
 chatError: { message }                    # rate limit hit
+spectatorCount: { count }
+tournamentJoined: { snapshot }
+tournamentUpdate: { status, players[{name,avatar,rating,eliminated}], round, rounds[[{a,b,winnerName,roomId,live}]], championName }
+tournamentError: { message }
 ```
 
 ---
@@ -242,11 +256,31 @@ Open Render URL on desktop + phone. Create room on one, join with 6-char code on
 
 ---
 
-## Next Steps (if continuing)
-1. Tournament mode (brackets)
-2. Move hints for beginners
-3. Profile avatars
-4. Spectator count display
+## Next Steps (if continuing — tomorrow)
+1. 8-player brackets (engine already generic; raise TOURNAMENT_SIZE + UI)
+2. Rematch ladders / ranked seasons
+3. Daily challenges
+4. ELO leaderboard page
+5. Tournament persistence across refresh (rejoin by tournament id)
+
+---
+
+## Tournaments — Implementation Notes
+
+- `server/tournament.js` keeps a Map of tournaments. `joinTournament` places a
+  player in any open lobby (or creates one); at 4 entrants the bracket seeds
+  randomly and each semifinal launches in a **private room** built via
+  `websocket.createInternalRoom` (normal create→join→start flow, so clients
+  transition through their existing roomCreated/roomJoined handlers).
+- Rooms get `isPrivate` AFTER both seats fill — the join guard would otherwise
+  reject our own internal join. `rooms.joinRoom` checks `isPrivate` before
+  capacity so outsiders see `roomLocked`.
+- Results: `scheduleGameEnd` detects `room.tourney`; draws call
+  `restartGame` (replay until decisive), wins call `tournament.reportResult`
+  with the seat number mapped back to participants.
+- Eliminated players keep receiving `tournamentUpdate` broadcasts, including
+  live match roomIds, so they can spectate from the bracket screen.
+- Elo still applies to tournament games (they're normal rated rooms).
 
 ---
 
@@ -278,4 +312,4 @@ Open Render URL on desktop + phone. Create room on one, join with 6-char code on
 
 ---
 
-*Last updated: 2026-08-24 — Polish pass: last-move highlight, sound toggle (persisted), remembered names, landing ELO chip; README refreshed. Feature set complete and smoke-tested.*
+*Last updated: 2026-08-25 — Built move hints, spectator count, avatars, and 4-player tournaments. 34-check automated WS coverage, both suites green.*

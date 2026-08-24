@@ -2,6 +2,7 @@ const gameLogic = require('./gameLogic');
 const timer = require('./timer');
 const rooms = require('./rooms');
 const ai = require('./ai');
+const tournament = require('./tournament');
 
 function send(ws, type, payload) {
   if (ws.readyState === 1) {
@@ -73,6 +74,12 @@ function handleMessage(ws, message, roomsModule) {
     case 'sendChat':
       handleSendChat(ws, payload);
       break;
+    case 'joinTournament':
+      tournament.joinTournament(ws, payload);
+      break;
+    case 'leaveTournament':
+      tournament.leaveTournament(ws);
+      break;
     case 'ping':
       // Client heartbeat — no response needed; the ws-level ping/pong in
       // server.js handles liveness.
@@ -124,18 +131,27 @@ function handleJoinRoom(ws, payload) {
     return;
   }
 
-  const { room } = result;
-  const player = room.players.find(p => p.id === result.playerId);
-  const opponent = room.players.find(p => p.id !== result.playerId);
+  notifyPairJoined(rooms.getRoom(result.room.id), result.playerId);
+
+  if (result.room.players.length === 2) {
+    startGame(result.room);
+  }
+}
+
+// Send the roomJoined snapshot to both seated players after someone joins.
+function notifyPairJoined(room, joinerPlayerId) {
+  if (!room) return;
+  const player = room.players.find(p => p.id === joinerPlayerId);
+  const opponent = room.players.find(p => p.id !== joinerPlayerId);
   const playersList = () => room.players.map(p => ({ id: p.id, name: p.name, color: p.color, isHost: p.isHost, rating: Number.isFinite(p.rating) ? p.rating : null, avatar: p.avatar || null }));
 
-  send(ws, 'roomJoined', {
+  send(player.ws, 'roomJoined', {
     roomId: room.id,
     roomName: room.name,
     players: playersList(),
-    playerId: result.playerId,
+    playerId: player.id,
     playerColor: player.color,
-    gameState: room.gameState ? gameLogic.serializeForClient(room.gameState, result.playerId) : null
+    gameState: room.gameState ? gameLogic.serializeForClient(room.gameState, player.id) : null
   });
 
   if (opponent && opponent.ws && opponent.ws.readyState === 1) {
@@ -148,10 +164,35 @@ function handleJoinRoom(ws, payload) {
       gameState: room.gameState ? gameLogic.serializeForClient(room.gameState, opponent.id) : null
     });
   }
+}
 
-  if (room.players.length === 2) {
-    startGame(room);
+// Create a ready-to-play room for two tournament participants without them
+// exchanging a room code. Reuses the normal create/join/start flow.
+function createInternalRoom({ label, seatA, seatB }) {
+  const created = rooms.createRoom(label, null, seatA.ws, seatA.name, seatA.rating, seatA.avatar);
+  const room = rooms.getRoom(created.roomId);
+
+  const joined = rooms.joinRoom(room.id, null, seatB.ws, seatB.name, seatB.rating, seatB.avatar);
+  if (joined.error) {
+    return { error: joined.error };
   }
+  // Lock only once both seats are filled — the private flag blocks outside
+  // joinRoom attempts.
+  room.isPrivate = true;
+
+  const host = room.players[0];
+  send(host.ws, 'roomCreated', {
+    roomId: room.id,
+    roomName: room.name,
+    playerId: host.id,
+    playerColor: 'yellow',
+    isHost: true
+  });
+
+  notifyPairJoined(room, joined.playerId);
+  startGame(room);
+
+  return { room };
 }
 
 function handleJoinSpectator(ws, payload) {
@@ -328,6 +369,16 @@ function scheduleGameEnd(room) {
         });
       }
     });
+
+    // Tournament matches feed their outcome back into the bracket. Draws are
+    // replayed until there is a decisive winner.
+    if (room.tourney) {
+      if (room.gameState.isDraw) {
+        setTimeout(() => restartGame(room), 1800);
+      } else {
+        require('./tournament').reportResult(room.tourney, room.gameState.winner);
+      }
+    }
   }, 500);
 }
 
@@ -583,6 +634,7 @@ module.exports = {
   send,
   broadcast,
   broadcastSpectatorCount,
+  createInternalRoom,
   handleMessage,
   advanceTurn,
   scheduleBotMove

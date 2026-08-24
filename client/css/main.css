@@ -453,6 +453,68 @@ body {
 .avatar-option:hover { transform: translateY(-2px); border-color: var(--yellow); }
 .avatar-option.active { border-color: var(--yellow); box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.15); }
 
+.bracket {
+  display: flex;
+  gap: 20px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.bracket-round {
+  min-width: 200px;
+  flex: 1;
+}
+
+.bracket-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.match-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.match-card.mine {
+  border-color: var(--yellow);
+  box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.12);
+}
+
+.match-line {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 2px 0;
+}
+
+.match-line.won { color: var(--accent); }
+.match-line.lost { opacity: 0.45; text-decoration: line-through; }
+
+.match-vs {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.watch-btn {
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.tour-players {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .timer-ring-container {
   width: 56px;
   height: 56px;

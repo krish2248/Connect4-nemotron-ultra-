@@ -152,6 +152,10 @@ function joinRoom(roomId, password, ws, playerName, rating, avatar) {
     return { error: 'gameFinished', message: 'Game already finished' };
   }
 
+  if (room.isPrivate) {
+    return { error: 'roomLocked', message: 'This room is reserved for a tournament match' };
+  }
+
   if (room.players.length >= room.maxPlayers) {
     return { error: 'roomFull', message: 'Room is full' };
   }

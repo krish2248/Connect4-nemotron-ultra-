@@ -44,6 +44,7 @@ const App = {
   gameState: null,
   timerState: null,
   myTurn: false,
+  tournament: null,
   board: null,
   timer: null,
   ui: null,
@@ -158,6 +159,18 @@ const App = {
         break;
       case 'spectatorCount':
         this.updateSpectatorCount(payload.count);
+        break;
+      case 'tournamentJoined':
+        this.tournament = payload;
+        this.state = 'tournament';
+        this.render();
+        break;
+      case 'tournamentUpdate':
+        this.tournament = payload;
+        if (this.state === 'tournament') this.render();
+        break;
+      case 'tournamentError':
+        this.showToast(payload.message, 'warning');
         break;
       case 'botThinking':
         this.updateBotThinking(payload.thinking);
@@ -527,10 +540,17 @@ const App = {
       </div>
     `;
 
-    this.ui.showModal('Stats & Achievements', content, [
-      { label: 'Play Again', class: 'btn-primary', handler: () => this.playAgain() },
-      { label: 'Main Menu', class: 'btn-secondary', handler: () => this.disconnect() }
-    ]);
+    const buttons = this.inTournament
+      ? [{ label: 'Back to Bracket', class: 'btn-primary', handler: () => this.returnToBracket() }]
+      : [
+          { label: 'Play Again', class: 'btn-primary', handler: () => this.playAgain() },
+          { label: 'Main Menu', class: 'btn-secondary', handler: () => this.disconnect() }
+        ];
+    this.ui.showModal('Stats & Achievements', content, buttons);
+  },
+
+  get inTournament() {
+    return !!(this.tournament && !this.singlePlayer && this.tournament.rounds?.length);
   },
 
   playAgain() {
@@ -604,6 +624,9 @@ const App = {
         break;
       case 'spectating':
         app.appendChild(this.createSpectatorScreen());
+        break;
+      case 'tournament':
+        app.appendChild(this.createTournamentScreen());
         break;
       case 'gameover':
         break;
@@ -690,6 +713,14 @@ const App = {
           <input type="text" id="spectate-name" placeholder="Spectator" maxlength="16" required>
         </div>
         <button class="btn btn-secondary" id="btn-spectate">Spectate Game</button>
+
+        <div class="divider">Trophy</div>
+
+        <div class="form-group">
+          <label for="tour-name">Your Name</label>
+          <input type="text" id="tour-name" placeholder="Player 1" maxlength="16" required>
+        </div>
+        <button class="btn btn-primary" id="btn-join-tournament">🏆 Join 4-Player Tournament</button>
       </div>
     `;
 
@@ -752,6 +783,22 @@ const App = {
       btnSpectate.addEventListener('click', () => {
         this.joinSpectator(spectateRoomId.value.toUpperCase(), spectateName.value);
       });
+
+      const tourName = screen.querySelector('#tour-name');
+      const btnTournament = screen.querySelector('#btn-join-tournament');
+      tourName.value = saved.profile || '';
+      btnTournament.addEventListener('click', () => {
+        const name = tourName.value.trim() || `Player ${Math.floor(Math.random() * 1000)}`;
+        saveNames({ profile: name });
+        this.playerName = name;
+        this.myAvatar = loadNames().avatar || null;
+        this.ws.send('joinTournament', {
+          playerName: name,
+          avatar: this.myAvatar,
+          rating: Rating.get(name)
+        });
+      });
+      tourName.addEventListener('keypress', (e) => { if (e.key === 'Enter') btnTournament.click(); });
 
       [createName, createPassword, createPlayerName].forEach(el => {
         el.addEventListener('keypress', (e) => { if (e.key === 'Enter') btnCreate.click(); });
@@ -899,6 +946,130 @@ const App = {
     }, 0);
 
     return screen;
+  },
+
+  createTournamentScreen() {
+    const t = this.tournament;
+    const screen = document.createElement('div');
+    screen.className = 'screen active';
+    if (!t) {
+      screen.innerHTML = '<div class="card">Tournament not found.</div>';
+      setTimeout(() => { this.state = 'landing'; this.render(); }, 0);
+      return screen;
+    }
+
+    const waiting = t.players.filter(p => !p.eliminated).length;
+    const statusChip = t.status === 'waiting'
+      ? `<span class="rating-chip">Waiting for players · ${t.players.length}/${4}</span>`
+      : t.status === 'finished'
+        ? `<span class="rating-chip" style="border-color: var(--yellow);">🏆 Champion: <b>${t.championName || '?'}</b></span>`
+        : `<span class="rating-chip">Round ${t.round + 1} · ${waiting} alive</span>`;
+
+    const bracketHtml = t.rounds.map((round, ri) => `
+      <div class="bracket-round">
+        <h3 class="bracket-title">${ri === t.rounds.length - 1 && t.status === 'finished' ? 'Final' : `Round ${ri + 1}`}</h3>
+        ${round.map(m => {
+          const involvesMe = m.a?.name === this.playerName || m.b?.name === this.playerName;
+          const winnerA = m.winnerName && m.a && m.winnerName === m.a.name;
+          const winnerB = m.winnerName && m.b && m.winnerName === m.b.name;
+          return `
+            <div class="match-card ${involvesMe ? 'mine' : ''}">
+              <div class="match-line ${winnerA === true ? 'won' : (m.winnerName ? 'lost' : '')}">${m.a?.avatar || ''} ${m.a?.name || '—'}</div>
+              <div class="match-vs">vs</div>
+              <div class="match-line ${winnerB === true ? 'won' : (m.winnerName ? 'lost' : '')}">${m.b?.avatar || ''} ${m.b?.name || '—'}</div>
+              ${m.live && !involvesMe && !this.isSpectatorInMatch(m) ? `<button class="btn btn-ghost watch-btn" data-room="${m.roomId}">📺 Watch</button>` : ''}
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `).join('');
+
+    const canLeaveCleanly = t.status === 'waiting' || t.status === 'finished';
+
+    screen.innerHTML = `
+      <div class="card" style="max-width: 720px; width: 100%;">
+        <div class="board-header" style="margin-bottom: 16px;">
+          <h1 style="margin:0;">🏆 Tournament</h1>
+          ${statusChip}
+        </div>
+        ${t.status === 'waiting' ? `
+          <p class="subtitle">Share nothing — the bracket starts automatically when 4 players join.</p>
+          <div class="tour-players">
+            ${t.players.map(p => `<span class="rating-chip">${p.avatar || '🙂'} ${p.name}</span>`).join('')}
+          </div>
+        ` : `
+          <div class="bracket">${bracketHtml}</div>
+        `}
+        <button class="btn btn-ghost" id="btn-tour-leave" style="margin-top: 20px; width: 100%;">
+          ${canLeaveCleanly ? (t.status === 'finished' ? 'Back to Main Menu' : 'Leave Tournament') : 'Leave Tournament (forfeit view)'}
+        </button>
+      </div>
+    `;
+
+    setTimeout(() => {
+      screen.querySelectorAll('.watch-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const savedNames = loadNames();
+          const name = savedNames.spectate || `Spectator ${Math.floor(Math.random() * 1000)}`;
+          this.joinSpectator(btn.dataset.room, name);
+        });
+      });
+      screen.querySelector('#btn-tour-leave').addEventListener('click', () => {
+        if (canLeaveCleanly) {
+          if (t.status === 'waiting') this.ws.send('leaveTournament', {});
+          this.tournament = null;
+          this.disconnect();
+        } else {
+          // Mid-bracket you can stop watching, but your seat stays until it plays out.
+          this.showToast('You are still in the tournament — leaving disconnects you.', 'info');
+          this.disconnect();
+        }
+      });
+    }, 0);
+
+    return screen;
+  },
+
+  isSpectatorInMatch(match) {
+    return false; // players in a live match are in-game, never on this screen
+  },
+
+  returnToBracket() {
+    this.ui.closeAllModals();
+    if (this.chat) this.chat.destroy();
+    this.board = null;
+    this.clearRoomState();
+    if (this.tournament && this.tournament.status !== 'finished') {
+      this.state = 'tournament';
+    } else {
+      this.tournament = null;
+      this.state = 'landing';
+    }
+    this.render();
+  },
+
+  clearRoomState() {
+    this.roomId = null;
+    this.playerId = null;
+    this.spectatorId = null;
+    this.isSpectator = false;
+    this.spectatorName = null;
+    this.spectatorRatings = null;
+    this.player1Name = null;
+    this.player2Name = null;
+    this.player1Avatar = null;
+    this.player2Avatar = null;
+    this.myAvatar = null;
+    this.opponentAvatar = null;
+    this.gameState = null;
+    this.timerState = null;
+    this.board = null;
+    this.timer = null;
+    this.singlePlayer = false;
+    this.opponentName = 'Opponent';
+    this.opponentRating = null;
+    this.lastEloResult = null;
+    Reconnect.clearSession();
   },
 
   syncSoundButtons() {
@@ -1297,25 +1468,8 @@ const App = {
     }
     if (this.ws) this.ws.close();
     this.state = 'landing';
-    this.roomId = null;
-    this.playerId = null;
-    this.spectatorId = null;
-    this.isSpectator = false;
-    this.spectatorName = null;
-    this.spectatorRatings = null;
-    this.player1Name = null;
-    this.player2Name = null;
-    this.player1Avatar = null;
-    this.player2Avatar = null;
-    this.myAvatar = null;
-    this.opponentAvatar = null;
-    this.gameState = null;
-    this.timerState = null;
-    this.singlePlayer = false;
-    this.opponentName = 'Opponent';
-    this.opponentRating = null;
-    this.lastEloResult = null;
-    Reconnect.clearSession();
+    this.tournament = null;
+    this.clearRoomState();
     this.render();
   }
 };
