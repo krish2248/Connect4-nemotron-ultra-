@@ -32,6 +32,16 @@ function broadcastToSpectators(room, type, payload) {
   });
 }
 
+function activeSpectatorCount(room) {
+  return room.spectators.filter(s => s.connected || s.ws?.readyState === 1).length;
+}
+
+// Tell everyone in the room how many spectators are watching.
+function broadcastSpectatorCount(room) {
+  if (!room) return;
+  broadcast(room, 'spectatorCount', { count: activeSpectatorCount(room) });
+}
+
 function handleMessage(ws, message, roomsModule) {
   const { type, payload } = message;
 
@@ -73,8 +83,8 @@ function handleMessage(ws, message, roomsModule) {
 }
 
 function handleCreateRoom(ws, payload) {
-  const { name, password, playerName, rating } = payload;
-  const { roomId, playerId } = rooms.createRoom(name, password, ws, playerName, rating);
+  const { name, password, playerName, rating, avatar } = payload;
+  const { roomId, playerId } = rooms.createRoom(name, password, ws, playerName, rating, avatar);
   const room = rooms.getRoom(roomId);
 
   send(ws, 'roomCreated', {
@@ -87,8 +97,8 @@ function handleCreateRoom(ws, payload) {
 }
 
 function handleCreateSinglePlayer(ws, payload) {
-  const { playerName, difficulty, rating } = payload;
-  const { room, roomId, playerId } = rooms.createSinglePlayerRoom(playerName, difficulty, ws, rating);
+  const { playerName, difficulty, rating, avatar } = payload;
+  const { room, roomId, playerId } = rooms.createSinglePlayerRoom(playerName, difficulty, ws, rating, avatar);
   const bot = room.players.find(p => p.isBot);
 
   send(ws, 'roomCreated', {
@@ -106,8 +116,8 @@ function handleCreateSinglePlayer(ws, payload) {
 }
 
 function handleJoinRoom(ws, payload) {
-  const { roomId, password, playerName, rating } = payload;
-  const result = rooms.joinRoom(roomId, password, ws, playerName, rating);
+  const { roomId, password, playerName, rating, avatar } = payload;
+  const result = rooms.joinRoom(roomId, password, ws, playerName, rating, avatar);
 
   if (result.error) {
     send(ws, 'roomError', { code: result.error, message: result.message });
@@ -117,7 +127,7 @@ function handleJoinRoom(ws, payload) {
   const { room } = result;
   const player = room.players.find(p => p.id === result.playerId);
   const opponent = room.players.find(p => p.id !== result.playerId);
-  const playersList = () => room.players.map(p => ({ id: p.id, name: p.name, color: p.color, isHost: p.isHost, rating: Number.isFinite(p.rating) ? p.rating : null }));
+  const playersList = () => room.players.map(p => ({ id: p.id, name: p.name, color: p.color, isHost: p.isHost, rating: Number.isFinite(p.rating) ? p.rating : null, avatar: p.avatar || null }));
 
   send(ws, 'roomJoined', {
     roomId: room.id,
@@ -145,8 +155,8 @@ function handleJoinRoom(ws, payload) {
 }
 
 function handleJoinSpectator(ws, payload) {
-  const { roomId, spectatorName } = payload;
-  const result = rooms.joinAsSpectator(roomId, ws, spectatorName);
+  const { roomId, spectatorName, avatar } = payload;
+  const result = rooms.joinAsSpectator(roomId, ws, spectatorName, avatar);
 
   if (result.error) {
     send(ws, 'roomError', { code: result.error, message: result.message });
@@ -160,8 +170,11 @@ function handleJoinSpectator(ws, payload) {
     roomName: room.name,
     spectatorId,
     players,
-    gameState
+    gameState,
+    spectatorCount: activeSpectatorCount(room)
   });
+
+  broadcastSpectatorCount(room);
 }
 
 function startGame(room) {
@@ -431,8 +444,10 @@ function handleRequestReconnect(ws, payload) {
     timerState,
     playerColor: player.color,
     playerName: player.name,
+    playerAvatar: player.avatar || null,
     opponentName: opponent?.name || 'Opponent',
     opponentColor: opponent?.color || (player.color === 'yellow' ? 'red' : 'yellow'),
+    opponentAvatar: opponent?.avatar || null,
     opponentRating: opponent && Number.isFinite(opponent.rating) ? opponent.rating : null
   });
 
@@ -460,11 +475,11 @@ const CHAT_BURST_WINDOW_MS = 10000;
 function identifySender(ws, room) {
   const player = room.players.find(p => p.id === ws.playerId);
   if (player) {
-    return { id: player.id, name: player.name, color: player.color, isSpectator: false };
+    return { id: player.id, name: player.name, color: player.color, avatar: player.avatar || null, isSpectator: false };
   }
   const spectator = room.spectators.find(s => s.id === ws.spectatorId);
   if (spectator) {
-    return { id: spectator.id, name: spectator.name, color: null, isSpectator: true };
+    return { id: spectator.id, name: spectator.name, color: null, avatar: spectator.avatar || null, isSpectator: true };
   }
   return null;
 }
@@ -515,6 +530,7 @@ function handleSendChat(ws, payload) {
     senderId: sender.id,
     senderName: sender.name,
     senderColor: sender.color,
+    senderAvatar: sender.avatar,
     text,
     isEmote: emote,
     isSpectator: sender.isSpectator,
@@ -566,6 +582,7 @@ function computeGameElo(room) {
 module.exports = {
   send,
   broadcast,
+  broadcastSpectatorCount,
   handleMessage,
   advanceTurn,
   scheduleBotMove

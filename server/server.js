@@ -5,7 +5,7 @@ const WebSocket = require('ws');
 const { v4: uuidv4 } = require('uuid');
 
 const rooms = require('./rooms');
-const { handleMessage } = require('./websocket');
+const { handleMessage, broadcastSpectatorCount } = require('./websocket');
 const { cleanupInactiveRooms: cleanupRooms } = require('./rooms');
 
 const PORT = process.env.PORT || 3000;
@@ -72,6 +72,7 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     if (ws.isSpectator) {
       rooms.leaveSpectator(ws);
+      broadcastSpectatorCount(rooms.getRoom(ws.roomId));
     } else {
       rooms.leaveRoom(ws);
     }
