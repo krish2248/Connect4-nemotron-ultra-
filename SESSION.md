@@ -9,19 +9,23 @@
 ## ▶️ Resume Here (Tomorrow)
 
 **Last commit:** `f3d55e5` — *Add spectator mode*.
-Working tree is clean and pushed to `origin/master`; Render auto-deploys on push.
+**Uncommitted in working tree:** chat/emotes · ELO ranking · custom themes (all three
+implemented, smoke-tested end-to-end, ready to commit & push).
 
-**What just shipped:** Spectator mode — users can join any active game as a spectator via room code. The server broadcasts all game events (moves, turn changes, game end) to spectators. Spectator UI shows the board with player panels but no turn timer or drop interaction.
+**What just shipped:** In-game chat with floating emotes (players + spectators),
+server-authoritative ELO (K=32) with Bronze→Diamond tiers shown on player panels,
+and 6 switchable color themes persisted to localStorage.
 
 **Verify:**
-1. Load the live site → "Join Server" → enter a room code that's currently playing → choose a spectator name → confirm you see the board and live updates.
-2. Confirm online 2-player still works end-to-end.
-3. Check spectator UI on mobile + desktop (respects `prefers-reduced-motion`).
+1. Two tabs → join same room → send messages/emotes from the chat bubble (bottom-right); emotes float up the board.
+2. Finish a multiplayer game → stats modal shows Before / Change / New rating + tier; panels show ⭐ rating lines.
+3. Landing screen → 🎨 Theme button → pick a theme; refresh keeps it.
+4. Refresh mid-game → reconnect restores names, room code header, ratings.
 
 **How to run locally:** `cd server && npm install && npm start` → open
 http://localhost:3000.
 
-**Next candidates (pick one):** chat/emotes · ELO/ranking · custom themes.
+**Next candidates (pick one):** move hints/highlights · tournament mode · sound toggle in UI · profile name picker on landing.
 
 ---
 
@@ -48,10 +52,11 @@ A real-time 2-player online Connect 4 game with:
 ### Client (`/client`)
 | File | Purpose |
 |------|---------|
-| `index.html` | Single entry point, loads 4 CSS + 9 JS modules |
+| `index.html` | Single entry point, loads 5 CSS + 12 JS modules |
 | `css/main.css` | Design system (dark premium theme, CSS variables) |
 | `css/board.css` | Board frame, slots, 60fps GPU coin animations |
 | `css/ui.css` | Screens, modals, timer ring, stats, achievements |
+| `css/chat.css` | Chat bubble/panel, emotes, floating emote animation |
 | `css/animations.css` | Keyframes (drop, bounce, glow, confetti, banner) |
 | `js/main.js` | App state, routing, WS handlers, screen rendering |
 | `js/websocket.js` | WS client wrapper (reconnect, queue, heartbeat) |
@@ -59,9 +64,12 @@ A real-time 2-player online Connect 4 game with:
 | `js/timer.js` | SVG circular progress ring |
 | `js/ui.js` | Toasts, modals, win banner, canvas confetti |
 | `js/stats.js` | localStorage stats + 8 achievements |
+| `js/chat.js` | Chat panel UI: messages, emote bar, unread badge, floaters |
+| `js/rating.js` | Per-name ELO in localStorage + Bronze→Diamond tiers |
+| `js/themes.js` | 6 themes as CSS-variable overrides on `<html>` |
 | `js/gameLogic.js` | Client preview only (drop row, valid moves) |
 | `js/reconnect.js` | Session restore from localStorage |
-| `js/audio.js` | Web Audio API (coin drop, win, timeout, button) |
+| `js/audio.js` | Web Audio API (coin drop, win, timeout, button, chat) |
 
 ---
 
@@ -70,6 +78,9 @@ A real-time 2-player online Connect 4 game with:
 - ✅ **Single-player vs AI** (Easy / Medium / Hard) — server-side minimax opponent
 - ✅ **Bot thinking indicator** — animated "..." on Computer panel during AI turn
 - ✅ **Spectator mode** — watch any active game by joining with room code
+- ✅ **In-game chat + emotes** — players & spectators, rate-limited, unread badge, floating emote animation, chat sound
+- ✅ **ELO ranking** — server-computed K=32 Elo on multiplayer games (bot games unrated), Bronze/Silver/Gold/Platinum/Diamond tiers, shown on player panels + stats modals
+- ✅ **Custom themes** — 6 themes (Classic Dark, Midnight Blue, Forest Green, Sunset Purple, Neon Arcade, Daylight), persisted in localStorage
 - ✅ Human-readable 6-char room codes
 - ✅ Password-protected rooms (SHA-256 + salt)
 - ✅ 30s turn timer (server-authoritative, synced to both clients)
@@ -91,20 +102,22 @@ A real-time 2-player online Connect 4 game with:
 
 ### Client → Server
 ```
-createRoom: { name, password, playerName }
-createSinglePlayer: { playerName, difficulty }   # difficulty: easy|medium|hard
-joinRoom: { roomId, password, playerName }
+createRoom: { name, password, playerName, rating }
+createSinglePlayer: { playerName, difficulty, rating }   # difficulty: easy|medium|hard
+joinRoom: { roomId, password, playerName, rating }
 joinSpectator: { roomId, spectatorName }
 dropCoin: { column }
+sendChat: { roomId, text, isEmote }   # isEmote: short string or null
 requestRematch: { roomId }
 requestReconnect: { roomId, playerId }
 requestState: { roomId }
+ping                                   # client heartbeat (no reply)
 ```
 
 ### Server → Client
 ```
 roomCreated: { roomId, roomName, playerId, playerColor, isHost, singlePlayer?, difficulty?, opponentName? }
-roomJoined: { roomId, roomName, players, playerId, playerColor, gameState }
+roomJoined: { roomId, roomName, players[{id,name,color,isHost,rating}], playerId, playerColor, gameState }
 spectatorJoined: { roomId, roomName, spectatorId, players, gameState }
 roomError: { code, message }
 gameStart: { gameState, countdown: 3 }
@@ -112,13 +125,15 @@ coinDropped: { column, row, player, board }
 gameState: { board, currentPlayer, winner, winningCoords, isDraw, moveCount }
 turnChanged: { currentPlayer, timeRemaining }
 turnSkipped: { player, reason: 'timeout' }
-gameEnd: { winner, winningCoords, isDraw, stats }
+gameEnd: { winner, winningCoords, isDraw, stats, elo? }   # elo: {old,new,delta} or {rated:false}
 playerDisconnected: { playerId }
 playerReconnected: { playerId }
 rematchOffered: { fromPlayerId }
 rematchAccepted: { gameState }
-stateSync: { gameState, timerState }
+stateSync: { gameState, timerState, roomId?, playerColor?, playerName?, opponentName?, opponentRating? }
 botThinking: { thinking: boolean }        # single-player only
+chatMessage: { senderId, senderName, senderColor, text, isEmote, isSpectator, timestamp }
+chatError: { message }                    # rate limit hit
 ```
 
 ---
@@ -226,10 +241,39 @@ Open Render URL on desktop + phone. Create room on one, join with 6-char code on
 ---
 
 ## Next Steps (if continuing)
-1. Add chat/emotes
-2. Add ELO/ranking system
-3. Add custom themes
+1. Move hints / last-move highlight
+2. Tournament mode (brackets)
+3. Sound toggle button in the game UI
+4. Profile name picker remembered across sessions
 
 ---
 
-*Last updated: 2026-07-28 — Added spectator mode (join any game by room code) and bot thinking indicator. Game live at https://connect4-nemotron-ultra.onrender.com*
+## Chat, ELO & Themes — Implementation Notes
+
+- **Chat**: server sanitizes text (collapse whitespace, 140-char cap), rate-limits
+  per socket (400ms min interval, 8 msgs/10s burst → `chatError`). Spectators can
+  chat; messages are tagged `isSpectator`. Client renders via `textContent` (no
+  HTML injection), keeps last 100 rows, floats incoming emotes over the board.
+- **ELO**: computed server-side at game end (`computeGameElo` in websocket.js),
+  K=32, default 1000 for players without a rating. Bot/single-player games are
+  unrated. Each client stores its own rating by player name in localStorage
+  (`connect4_ratings`) and sends it when creating/joining so opponents' panels
+  show real values.
+- **Themes**: `themes.js` maps CSS custom properties onto `<html>` inline styles;
+  `classic` clears all overrides back to the stylesheet defaults. Board frame /
+  hole / coin-edge colors are themeable variables (`--frame-grad-*`, `--hole-c*`,
+  `--coin-*-edge`, `--win-glow`) added in main.css/board.css.
+
+### Bugs fixed while building these
+- Double floating emote (chat.js and main.js both floated incoming emotes).
+- Spectators got unread badge/ping for their own chat messages (`setMyId` now uses
+  spectatorId when spectating).
+- Emote flag lost on the wire: client sent boolean `isEmote:true` but server only
+  accepted short strings — normalized on both sides.
+- Reconnect didn't restore identity: `stateSync` now carries roomId/playerName/
+  opponentName/opponentRating and the client applies them; also no longer wipes
+  `playerColor` on visibilitychange refreshes (which omit those fields).
+
+---
+
+*Last updated: 2026-08-24 — Added in-game chat + floating emotes, ELO ranking (K=32, Bronze→Diamond tiers), and 6 custom themes. All smoke-tested end-to-end; ready to commit/push.*

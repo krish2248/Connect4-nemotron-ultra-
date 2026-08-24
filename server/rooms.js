@@ -29,7 +29,7 @@ function hashPassword(password, salt) {
   return crypto.createHash('sha256').update(salt + password).digest('hex');
 }
 
-function createRoom(name, password, hostWs, hostName) {
+function createRoom(name, password, hostWs, hostName, rating) {
   // The room id IS the shareable 6-char code (uppercase A-Z/2-9).
   const roomId = generateUniqueRoomCode();
   const roomCode = roomId;
@@ -48,6 +48,7 @@ function createRoom(name, password, hostWs, hostName) {
       name: hostName || 'Player 1',
       color: 'yellow',
       isHost: true,
+      rating: Number.isFinite(rating) ? Math.max(100, Math.min(3000, Math.round(rating))) : null,
       ws: hostWs,
       connected: true
     }],
@@ -78,7 +79,7 @@ const BOT_NAMES = {
 
 // Create a single-player room: the human is player 1 (yellow), an AI bot is
 // player 2 (red). The bot has no websocket; the server drives its moves.
-function createSinglePlayerRoom(playerName, difficulty, hostWs) {
+function createSinglePlayerRoom(playerName, difficulty, hostWs, rating) {
   const roomId = generateUniqueRoomCode();
   const level = BOT_NAMES[difficulty] ? difficulty : 'medium';
   const playerId = uuidv4();
@@ -98,6 +99,7 @@ function createSinglePlayerRoom(playerName, difficulty, hostWs) {
         name: playerName || 'Player 1',
         color: 'yellow',
         isHost: true,
+        rating: Number.isFinite(rating) ? Math.max(100, Math.min(3000, Math.round(rating))) : null,
         ws: hostWs,
         connected: true
       },
@@ -130,7 +132,7 @@ function createSinglePlayerRoom(playerName, difficulty, hostWs) {
   return { room, roomId, playerId };
 }
 
-function joinRoom(roomId, password, ws, playerName) {
+function joinRoom(roomId, password, ws, playerName, rating) {
   const room = rooms.get(roomId);
   if (!room) {
     return { error: 'roomNotFound', message: 'Room not found' };
@@ -167,6 +169,7 @@ function joinRoom(roomId, password, ws, playerName) {
     name: playerName || `Player ${room.players.length + 1}`,
     color,
     isHost: false,
+    rating: Number.isFinite(rating) ? Math.max(100, Math.min(3000, Math.round(rating))) : null,
     ws,
     connected: true
   };
@@ -237,7 +240,7 @@ function joinAsSpectator(roomId, ws, spectatorName) {
 
   const gameState = room.gameState ? gameLogic.serializeForClient(room.gameState, null) : null;
 
-  return { room, spectatorId, gameState, players: room.players.map(p => ({ id: p.id, name: p.name, color: p.color, isHost: p.isHost })) };
+  return { room, spectatorId, gameState, players: room.players.map(p => ({ id: p.id, name: p.name, color: p.color, isHost: p.isHost, rating: Number.isFinite(p.rating) ? p.rating : null })) };
 }
 
 function leaveSpectator(ws) {

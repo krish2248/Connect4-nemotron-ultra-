@@ -141,6 +141,26 @@ export class AudioManager {
     osc.stop(now + 0.25);
   }
 
+  playChat() {
+    if (!this.enabled || !this.ctx) return;
+    this.ensureContext();
+
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(660, now);
+    osc.frequency.setValueAtTime(880, now + 0.07);
+
+    gain.gain.setValueAtTime(0.05, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+    osc.connect(gain).connect(this.ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.15);
+  }
+
   toggle() {
     this.enabled = !this.enabled;
     return this.enabled;

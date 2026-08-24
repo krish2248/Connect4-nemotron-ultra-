@@ -5,6 +5,9 @@ import { UI } from './ui.js';
 import { Stats, Achievements } from './stats.js';
 import { Reconnect } from './reconnect.js';
 import { AudioManager } from './audio.js';
+import { Chat } from './chat.js';
+import { ThemeManager } from './themes.js';
+import { Rating } from './rating.js';
 
 const App = {
   state: 'landing',
@@ -18,6 +21,7 @@ const App = {
   singlePlayer: false,
   difficulty: null,
   opponentName: 'Opponent',
+  opponentRating: null,
   gameState: null,
   timerState: null,
   myTurn: false,
@@ -27,18 +31,23 @@ const App = {
   stats: null,
   achievements: null,
   audio: null,
+  chat: null,
+  themes: null,
   reconnecting: false,
   selectedColumn: null,
   moveStartTime: 0,
   nearWinsTracked: { 1: 0, 2: 0 },
   timeoutsThisGame: { 1: 0, 2: 0 },
   blockedMovesThisGame: { 1: 0, 2: 0 },
+  lastEloResult: null,
 
   async init() {
     this.ui = new UI();
     this.audio = new AudioManager();
     this.stats = new Stats();
     this.achievements = new Achievements(this.stats);
+    this.themes = new ThemeManager();
+    this.chat = new Chat({ onSend: (text, isEmote) => this.sendChatMessage(text, isEmote) });
     this.ws = new GameSocket(this.handleMessage.bind(this));
     this.setupEventListeners();
     this.render();
@@ -63,6 +72,8 @@ const App = {
   async checkReconnect() {
     const session = Reconnect.getSession();
     if (session && Date.now() - session.timestamp < 24 * 60 * 60 * 1000) {
+      this.playerId = session.playerId;
+      this.roomId = session.roomId;
       this.reconnecting = true;
       this.ui.showReconnecting(true);
       this.ws.send('requestReconnect', { roomId: session.roomId, playerId: session.playerId });
@@ -132,6 +143,12 @@ const App = {
       case 'coinError':
         this.handleCoinError(payload);
         break;
+      case 'chatMessage':
+        this.handleChatMessage(payload);
+        break;
+      case 'chatError':
+        this.showToast(payload.message, 'warning');
+        break;
     }
   },
 
@@ -140,6 +157,7 @@ const App = {
     this.playerId = payload.playerId;
     this.playerColor = payload.playerColor;
     this.isHost = payload.isHost;
+    this.lastEloResult = null;
     Reconnect.saveSession(this.roomId, this.playerId);
 
     if (payload.singlePlayer) {
@@ -148,6 +166,7 @@ const App = {
       this.singlePlayer = true;
       this.difficulty = payload.difficulty || this.difficulty;
       this.opponentName = payload.opponentName || 'Computer';
+      this.opponentRating = null;
       return;
     }
 
@@ -160,6 +179,10 @@ const App = {
     this.playerId = payload.playerId;
     this.playerColor = payload.playerColor;
     this.isHost = payload.players.find(p => p.id === this.playerId)?.isHost || false;
+    const other = payload.players.find(p => p.id !== this.playerId);
+    this.opponentName = other?.name || 'Opponent';
+    this.opponentRating = Number.isFinite(other?.rating) ? other.rating : null;
+    this.lastEloResult = null;
     Reconnect.saveSession(this.roomId, this.playerId);
     if (payload.gameState) {
       this.gameState = payload.gameState;
@@ -170,15 +193,20 @@ const App = {
     this.render();
   },
 
-  handleSpectatorJoined(payload) {
-    this.roomId = payload.roomId;
-    this.spectatorId = payload.spectatorId;
-    this.isSpectator = true;
-    this.playerColor = null; // Spectators don't have a color
-    this.opponentName = 'Spectating';
-    this.gameState = payload.gameState;
-    this.state = 'spectating';
-    this.render();
+  sendChatMessage(text, isEmote) {
+    // Emotes travel as a short string so the server can echo them back;
+    // plain text messages send null.
+    const flag = isEmote === true ? String(text) : (typeof isEmote === 'string' ? isEmote : null);
+    this.ws.send('sendChat', { roomId: this.roomId, text, isEmote: flag });
+  },
+
+  handleChatMessage(msg) {
+    if (!this.chat) return;
+    this.chat.addMessage(msg);
+    if (msg.senderId !== this.playerId) {
+      if (msg.isEmote) this.chat.floatEmote(msg.text);
+      this.audio.playChat();
+    }
   },
 
   handleRoomError(payload) {
@@ -271,10 +299,15 @@ const App = {
   },
 
   handleGameEnd(payload) {
-    const { winner, winningCoords, isDraw, stats } = payload;
+    const { winner, winningCoords, isDraw, stats, elo } = payload;
     this.state = 'gameover';
 
     const myPlayerNum = this.playerColor === 'yellow' ? 1 : 2;
+
+    // Solo games vs the bot are unrated; ranked Elo comes back from the server.
+    this.lastEloResult = (!this.singlePlayer && elo && Number.isFinite(elo.new))
+      ? Rating.applyUpdate(this.playerName, elo)
+      : null;
 
     if (winner) {
       const winnerColor = winner === 1 ? 'yellow' : 'red';
@@ -329,9 +362,22 @@ const App = {
   },
 
   handleStateSync(payload) {
+    // Reconnect responses carry identity; visibilitychange refreshes don't —
+    // only overwrite what was actually sent.
+    if (payload.roomId && !this.roomId) {
+      this.roomId = payload.roomId;
+      if (this.playerId) Reconnect.saveSession(this.roomId, this.playerId);
+    }
     this.gameState = payload.gameState;
     this.timerState = payload.timerState;
-    this.playerColor = payload.playerColor;
+    this.playerColor = payload.playerColor || this.playerColor;
+    if (payload.playerName) {
+      this.playerName = payload.playerName;
+      this.opponentName = payload.opponentName || this.opponentName;
+      this.opponentRating = Number.isFinite(payload.opponentRating)
+        ? payload.opponentRating
+        : this.opponentRating;
+    }
     this.reconnecting = false;
     this.ui.showReconnecting(false);
 
@@ -387,7 +433,31 @@ const App = {
     const newUnlocks = this.achievements.checkUnlocks(gameSummary, sessionStats, persistentStats);
     newUnlocks.forEach(a => this.ui.showAchievementToast(a));
 
+    let eloSection = '';
+    if (this.lastEloResult) {
+      const { old, new: updated, delta } = this.lastEloResult;
+      const rank = Rating.rankFor(updated);
+      eloSection = `
+        <div style="margin-bottom: 24px;">
+          <h3 style="margin-bottom: 12px; color: var(--yellow);">Rating</h3>
+          <div class="stats-grid">
+            <div class="stat-card"><div class="stat-value">${old}</div><div class="stat-label">Before</div></div>
+            <div class="stat-card"><div class="stat-value" style="color:${delta >= 0 ? 'var(--accent)' : 'var(--red)'}">${Rating.formatDelta(delta)}</div><div class="stat-label">Change</div></div>
+            <div class="stat-card"><div class="stat-value">${updated}</div><div class="stat-label" style="color:${rank.color}">${rank.name}</div></div>
+          </div>
+        </div>
+      `;
+    } else if (!this.singlePlayer && !this.isSpectator) {
+      eloSection = `
+        <div style="margin-bottom: 24px;">
+          <h3 style="margin-bottom: 12px; color: var(--yellow);">Rating</h3>
+          <div class="rating-chip">Unrated game</div>
+        </div>
+      `;
+    }
+
     const content = `
+      ${eloSection}
       <div style="margin-bottom: 24px;">
         <h3 style="margin-bottom: 12px; color: var(--yellow);">This Game</h3>
         <div class="stats-grid">
@@ -444,6 +514,7 @@ const App = {
   },
 
   handleKeydown(e) {
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
     if (this.state !== 'playing' || !this.myTurn) return;
 
     const col = parseInt(e.key);
@@ -515,6 +586,8 @@ const App = {
         <h1>Connect 4</h1>
         <p class="subtitle">Play a friend online — or take on the computer</p>
 
+        <button class="btn btn-ghost" id="btn-themes" style="width: 100%; margin-bottom: 8px;">🎨 Theme: ${this.themes.list().find(t => t.id === this.themes.current)?.name || 'Classic Dark'}</button>
+
         <div class="divider">Play vs Computer</div>
 
         <div class="form-group">
@@ -578,6 +651,7 @@ const App = {
     `;
 
     setTimeout(() => {
+      const btnThemes = screen.querySelector('#btn-themes');
       const soloPlayerName = screen.querySelector('#solo-player-name');
       const difficultyGroup = screen.querySelector('#difficulty-group');
       const btnPlayComputer = screen.querySelector('#btn-play-computer');
@@ -590,6 +664,8 @@ const App = {
           difficulty = btn.dataset.difficulty;
         });
       });
+
+      btnThemes.addEventListener('click', () => this.showThemeModal());
 
       btnPlayComputer.addEventListener('click', () => {
         this.createSinglePlayer(soloPlayerName.value, difficulty);
@@ -709,6 +785,7 @@ const App = {
           <div class="player-avatar yellow"></div>
           <div class="player-info">
             <div class="player-name" id="player1-name">Player 1</div>
+            <div class="player-rating" id="player1-rating"></div>
           </div>
           <div class="timer-ring-container" id="timer1-ring"></div>
         </div>
@@ -716,6 +793,7 @@ const App = {
           <div class="player-avatar red"></div>
           <div class="player-info">
             <div class="player-name" id="player2-name">Player 2</div>
+            <div class="player-rating" id="player2-rating"></div>
           </div>
           <div class="timer-ring-container" id="timer2-ring"></div>
           <div class="thinking-indicator" id="player2-thinking" aria-live="polite">
@@ -749,6 +827,7 @@ const App = {
         this.timer.setActive(this.myTurn);
       }
 
+      this.mountChat();
       this.updatePlayerPanels();
 
       const btnStats = screen.querySelector('#btn-stats');
@@ -781,6 +860,7 @@ const App = {
           <div class="player-avatar yellow"></div>
           <div class="player-info">
             <div class="player-name" id="player1-name">Player 1</div>
+            <div class="player-rating" id="player1-rating"></div>
           </div>
           <div class="timer-ring-container" id="timer1-ring"></div>
         </div>
@@ -788,6 +868,7 @@ const App = {
           <div class="player-avatar red"></div>
           <div class="player-info">
             <div class="player-name" id="player2-name">Player 2</div>
+            <div class="player-rating" id="player2-rating"></div>
           </div>
           <div class="timer-ring-container" id="timer2-ring"></div>
           <div class="thinking-indicator" id="player2-thinking" aria-live="polite">
@@ -821,6 +902,7 @@ const App = {
         this.timer.setActive(false); // Spectators don't have active turns
       }
 
+      this.mountChat();
       this.updateSpectatorPanels();
 
       const btnStats = screen.querySelector('#btn-stats');
@@ -833,15 +915,33 @@ const App = {
     return screen;
   },
 
+  mountChat() {
+    // Spectators send with their spectator id as senderId, not a player id.
+    this.chat.setMyId(this.isSpectator ? this.spectatorId : this.playerId);
+    this.chat.mount();
+  },
+
+  formatRatingLine(name, rating) {
+    if (Number.isFinite(rating)) {
+      const rank = Rating.rankFor(rating);
+      return `⭐ ${rating} · ${rank.name}`;
+    }
+    return name ? '⭐ —' : '';
+  },
+
   updateSpectatorPanels() {
     const p1 = document.getElementById('player1-panel');
     const p2 = document.getElementById('player2-panel');
     const n1 = document.getElementById('player1-name');
     const n2 = document.getElementById('player2-name');
+    const r1 = document.getElementById('player1-rating');
+    const r2 = document.getElementById('player2-rating');
 
     if (p1 && p2 && n1 && n2 && this.gameState) {
       n1.textContent = this.player1Name || 'Player 1';
       n2.textContent = this.player2Name || 'Player 2';
+      if (r1) r1.textContent = this.formatRatingLine(this.player1Name, this.spectatorRatings?.[0]);
+      if (r2) r2.textContent = this.formatRatingLine(this.player2Name, this.spectatorRatings?.[1]);
 
       const currentPlayer = this.gameState.currentPlayer;
       p1.classList.toggle('active', currentPlayer === 1);
@@ -853,8 +953,14 @@ const App = {
     this.roomId = payload.roomId;
     this.spectatorId = payload.spectatorId;
     this.isSpectator = true;
+    this.playerColor = null;
+    this.opponentName = 'Spectating';
     this.player1Name = payload.players[0]?.name || 'Player 1';
     this.player2Name = payload.players[1]?.name || 'Player 2';
+    this.spectatorRatings = [
+      Number.isFinite(payload.players[0]?.rating) ? payload.players[0].rating : null,
+      Number.isFinite(payload.players[1]?.rating) ? payload.players[1].rating : null
+    ];
     this.gameState = payload.gameState;
     this.state = 'spectating';
     this.render();
@@ -866,10 +972,20 @@ const App = {
     const p2 = document.getElementById('player2-panel');
     const n1 = document.getElementById('player1-name');
     const n2 = document.getElementById('player2-name');
+    const r1 = document.getElementById('player1-rating');
+    const r2 = document.getElementById('player2-rating');
+
+    const myRating = this.playerName ? Rating.get(this.playerName) : null;
+    const myRatingLine = this.formatRatingLine(this.playerName, myRating);
+    const oppRatingLine = this.singlePlayer
+      ? `🤖 AI (${this.difficulty || 'medium'})`
+      : this.formatRatingLine(this.opponentName, this.opponentRating);
 
     if (p1 && p2 && n1 && n2) {
       n1.textContent = isYellow ? `${this.playerName} (You)` : this.opponentName;
       n2.textContent = !isYellow ? `${this.playerName} (You)` : this.opponentName;
+      if (r1) r1.textContent = isYellow ? myRatingLine : oppRatingLine;
+      if (r2) r2.textContent = !isYellow ? myRatingLine : oppRatingLine;
 
       p1.classList.toggle('active', this.myTurn && isYellow);
       p2.classList.toggle('active', this.myTurn && !isYellow);
@@ -881,7 +997,20 @@ const App = {
     const session = this.stats.getSessionStats();
     const achievements = this.achievements.getAll();
 
+    const myRating = this.playerName ? Rating.get(this.playerName) : null;
+    const rank = myRating !== null ? Rating.rankFor(myRating) : null;
+    const ratingSection = this.playerName ? `
+      <div style="margin-bottom: 24px;">
+        <h3 style="margin-bottom: 12px; color: var(--yellow);">Ranking</h3>
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-value">${myRating}</div><div class="stat-label">ELO</div></div>
+          <div class="stat-card"><div class="stat-value" style="font-size:20px;color:${rank.color};line-height:2">${rank.name}</div><div class="stat-label">Tier</div></div>
+        </div>
+      </div>
+    ` : '';
+
     const content = `
+      ${ratingSection}
       <div style="margin-bottom: 24px;">
         <h3 style="margin-bottom: 12px; color: var(--yellow);">Session Stats</h3>
         <div class="stats-grid">
@@ -923,23 +1052,54 @@ const App = {
     ]);
   },
 
+  showThemeModal() {
+    const themes = this.themes.list();
+    const content = `
+      <div class="theme-swatch-grid">
+        ${themes.map(t => `
+          <button class="theme-swatch-card ${t.active ? 'active' : ''}" data-theme-id="${t.id}" type="button">
+            <div class="theme-swatch-colors">
+              ${t.swatch.map(c => `<span class="theme-swatch-dot" style="background:${c}"></span>`).join('')}
+            </div>
+            <div class="theme-swatch-name">${t.name}</div>
+          </button>
+        `).join('')}
+      </div>
+    `;
+
+    this.ui.showModal('Choose a Theme', content, [
+      { label: 'Done', class: 'btn-primary', handler: () => {} }
+    ]);
+
+    setTimeout(() => {
+      document.querySelectorAll('.theme-swatch-card').forEach(card => {
+        card.addEventListener('click', () => {
+          this.themes.set(card.dataset.themeId);
+          document.querySelectorAll('.theme-swatch-card').forEach(c => c.classList.remove('active'));
+          card.classList.add('active');
+        });
+      });
+    }, 0);
+  },
+
   createRoom(name, password, playerName) {
     this.singlePlayer = false;
     this.opponentName = 'Opponent';
+    this.opponentRating = null;
     this.playerName = playerName || 'Player 1';
-    this.ws.send('createRoom', { name, password, playerName: this.playerName });
+    this.ws.send('createRoom', { name, password, playerName: this.playerName, rating: Rating.get(this.playerName) });
   },
 
   createSinglePlayer(playerName, difficulty) {
     this.singlePlayer = true;
     this.difficulty = difficulty || 'medium';
     this.playerName = playerName || 'Player 1';
-    this.ws.send('createSinglePlayer', { playerName: this.playerName, difficulty: this.difficulty });
+    this.ws.send('createSinglePlayer', { playerName: this.playerName, difficulty: this.difficulty, rating: Rating.get(this.playerName) });
   },
 
   joinRoom(roomId, password, playerName) {
     this.playerName = playerName || 'Player 2';
-    this.ws.send('joinRoom', { roomId, password, playerName: this.playerName });
+    this.ws.send('joinRoom', { roomId, password, playerName: this.playerName, rating: Rating.get(this.playerName) });
   },
 
   joinSpectator(roomId, spectatorName) {
@@ -949,6 +1109,9 @@ const App = {
 
   disconnect() {
     this.ui.closeAllModals();
+    if (this.chat) {
+      this.chat.destroy();
+    }
     if (this.ws) this.ws.close();
     this.state = 'landing';
     this.roomId = null;
@@ -956,10 +1119,15 @@ const App = {
     this.spectatorId = null;
     this.isSpectator = false;
     this.spectatorName = null;
+    this.spectatorRatings = null;
+    this.player1Name = null;
+    this.player2Name = null;
     this.gameState = null;
     this.timerState = null;
     this.singlePlayer = false;
     this.opponentName = 'Opponent';
+    this.opponentRating = null;
+    this.lastEloResult = null;
     Reconnect.clearSession();
     this.render();
   }

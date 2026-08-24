@@ -60,14 +60,21 @@ function handleMessage(ws, message, roomsModule) {
     case 'requestState':
       handleRequestState(ws, payload);
       break;
+    case 'sendChat':
+      handleSendChat(ws, payload);
+      break;
+    case 'ping':
+      // Client heartbeat — no response needed; the ws-level ping/pong in
+      // server.js handles liveness.
+      break;
     default:
       console.warn('Unknown message type:', type);
   }
 }
 
 function handleCreateRoom(ws, payload) {
-  const { name, password, playerName } = payload;
-  const { roomId, playerId } = rooms.createRoom(name, password, ws, playerName);
+  const { name, password, playerName, rating } = payload;
+  const { roomId, playerId } = rooms.createRoom(name, password, ws, playerName, rating);
   const room = rooms.getRoom(roomId);
 
   send(ws, 'roomCreated', {
@@ -80,8 +87,8 @@ function handleCreateRoom(ws, payload) {
 }
 
 function handleCreateSinglePlayer(ws, payload) {
-  const { playerName, difficulty } = payload;
-  const { room, roomId, playerId } = rooms.createSinglePlayerRoom(playerName, difficulty, ws);
+  const { playerName, difficulty, rating } = payload;
+  const { room, roomId, playerId } = rooms.createSinglePlayerRoom(playerName, difficulty, ws, rating);
   const bot = room.players.find(p => p.isBot);
 
   send(ws, 'roomCreated', {
@@ -99,8 +106,8 @@ function handleCreateSinglePlayer(ws, payload) {
 }
 
 function handleJoinRoom(ws, payload) {
-  const { roomId, password, playerName } = payload;
-  const result = rooms.joinRoom(roomId, password, ws, playerName);
+  const { roomId, password, playerName, rating } = payload;
+  const result = rooms.joinRoom(roomId, password, ws, playerName, rating);
 
   if (result.error) {
     send(ws, 'roomError', { code: result.error, message: result.message });
@@ -110,11 +117,12 @@ function handleJoinRoom(ws, payload) {
   const { room } = result;
   const player = room.players.find(p => p.id === result.playerId);
   const opponent = room.players.find(p => p.id !== result.playerId);
+  const playersList = () => room.players.map(p => ({ id: p.id, name: p.name, color: p.color, isHost: p.isHost, rating: Number.isFinite(p.rating) ? p.rating : null }));
 
   send(ws, 'roomJoined', {
     roomId: room.id,
     roomName: room.name,
-    players: room.players.map(p => ({ id: p.id, name: p.name, color: p.color, isHost: p.isHost })),
+    players: playersList(),
     playerId: result.playerId,
     playerColor: player.color,
     gameState: room.gameState ? gameLogic.serializeForClient(room.gameState, result.playerId) : null
@@ -124,7 +132,7 @@ function handleJoinRoom(ws, payload) {
     send(opponent.ws, 'roomJoined', {
       roomId: room.id,
       roomName: room.name,
-      players: room.players.map(p => ({ id: p.id, name: p.name, color: p.color, isHost: p.isHost })),
+      players: playersList(),
       playerId: opponent.id,
       playerColor: opponent.color,
       gameState: room.gameState ? gameLogic.serializeForClient(room.gameState, opponent.id) : null
@@ -283,13 +291,16 @@ function broadcastMove(room, column, row, playerNum) {
 function scheduleGameEnd(room) {
   setTimeout(() => {
     const stats = generateGameStats(room);
+    const elo = computeGameElo(room);
+
     room.players.forEach((player, i) => {
       if (player.ws && player.ws.readyState === 1) {
         send(player.ws, 'gameEnd', {
           winner: room.gameState.winner,
           winningCoords: room.gameState.winningCoords,
           isDraw: room.gameState.isDraw,
-          stats: i === 0 ? stats.player1 : stats.player2
+          stats: i === 0 ? stats.player1 : stats.player2,
+          elo: elo.rated ? (elo.byPlayerId.get(player.id) || null) : { rated: false }
         });
       }
     });
@@ -415,12 +426,14 @@ function handleRequestReconnect(ws, payload) {
   const opponent = room.players.find(p => p.id !== playerId);
 
   send(ws, 'stateSync', {
+    roomId: room.id,
     gameState,
     timerState,
     playerColor: player.color,
     playerName: player.name,
     opponentName: opponent?.name || 'Opponent',
-    opponentColor: opponent?.color || (player.color === 'yellow' ? 'red' : 'yellow')
+    opponentColor: opponent?.color || (player.color === 'yellow' ? 'red' : 'yellow'),
+    opponentRating: opponent && Number.isFinite(opponent.rating) ? opponent.rating : null
   });
 
   if (opponent && opponent.ws && opponent.ws.readyState === 1) {
@@ -436,6 +449,118 @@ function handleRequestState(ws, payload) {
   const timerState = timer.getTimerState(room);
 
   send(ws, 'stateSync', { gameState, timerState });
+}
+
+const CHAT_MAX_LENGTH = 140;
+const CHAT_MIN_INTERVAL_MS = 400;
+const CHAT_BURST_LIMIT = 8;
+const CHAT_BURST_WINDOW_MS = 10000;
+
+// Resolve who is sending from this socket: a seated player or a spectator.
+function identifySender(ws, room) {
+  const player = room.players.find(p => p.id === ws.playerId);
+  if (player) {
+    return { id: player.id, name: player.name, color: player.color, isSpectator: false };
+  }
+  const spectator = room.spectators.find(s => s.id === ws.spectatorId);
+  if (spectator) {
+    return { id: spectator.id, name: spectator.name, color: null, isSpectator: true };
+  }
+  return null;
+}
+
+function sanitizeChatText(text) {
+  if (typeof text !== 'string') return null;
+  const cleaned = text.replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX_LENGTH);
+  return cleaned.length > 0 ? cleaned : null;
+}
+
+function allowChatRate(ws) {
+  const now = Date.now();
+  if (!ws.chatWindow) ws.chatWindow = [];
+  // Drop timestamps outside the burst window.
+  ws.chatWindow = ws.chatWindow.filter(t => now - t < CHAT_BURST_WINDOW_MS);
+  if (ws.lastChatAt && now - ws.lastChatAt < CHAT_MIN_INTERVAL_MS) return false;
+  if (ws.chatWindow.length >= CHAT_BURST_LIMIT) return false;
+  ws.lastChatAt = now;
+  ws.chatWindow.push(now);
+  return true;
+}
+
+function handleSendChat(ws, payload) {
+  const room = rooms.getRoom(ws.roomId);
+  if (!room) return;
+
+  const sender = identifySender(ws, room);
+  if (!sender) return;
+
+  const text = sanitizeChatText(payload?.text);
+  if (!text) return;
+
+  if (!allowChatRate(ws)) {
+    send(ws, 'chatError', { message: 'Slow down — too many messages.' });
+    return;
+  }
+
+  // isEmote is a short string (the emote itself); tolerate a bare `true` by
+  // falling back to the message text.
+  let emote = null;
+  if (payload.isEmote === true) {
+    emote = text;
+  } else if (typeof payload.isEmote === 'string' && payload.isEmote.length > 0 && payload.isEmote.length <= 8) {
+    emote = payload.isEmote;
+  }
+
+  broadcast(room, 'chatMessage', {
+    senderId: sender.id,
+    senderName: sender.name,
+    senderColor: sender.color,
+    text,
+    isEmote: emote,
+    isSpectator: sender.isSpectator,
+    timestamp: Date.now()
+  });
+}
+
+// Standard Elo with K=32. Returns the new ratings for [player1Num, player2Num]
+// given their current ratings and the game outcome.
+function computeElo(ratingA, ratingB, scoreA) {
+  const K = 32;
+  const expectedA = 1 / (1 + Math.pow(10, (ratingB - ratingA) / 400));
+  const expectedB = 1 - expectedA;
+  const scoreB = 1 - scoreA;
+  return {
+    ratingA: Math.round(ratingA + K * (scoreA - expectedA)),
+    ratingB: Math.round(ratingB + K * (scoreB - expectedB))
+  };
+}
+
+// Build per-player Elo payloads for a finished multiplayer game. Returns
+// { rated: boolean, byPlayerId: Map<playerId, {old, new, delta}> }.
+function computeGameElo(room) {
+  const humans = room.players.filter(p => !p.isBot);
+  if (room.isSinglePlayer || humans.length !== 2) {
+    return { rated: false, byPlayerId: new Map() };
+  }
+
+  const ratings = humans.map(p => Number.isFinite(p.rating) ? p.rating : 1000);
+
+  // Seat num 1 is always the yellow player; humans[0] should be yellow but
+  // resolve by colour so the mapping can never drift.
+  const yellowIdx = humans.findIndex(p => p.color === 'yellow');
+  const yellowRating = ratings[yellowIdx === -1 ? 0 : yellowIdx];
+  const redRating = ratings[yellowIdx === -1 ? 1 : 1 - yellowIdx];
+
+  const scoreYellow = room.gameState.isDraw ? 0.5 : (room.gameState.winner === 1 ? 1 : 0);
+  const { ratingA, ratingB } = computeElo(yellowRating, redRating, scoreYellow);
+
+  const byPlayerId = new Map();
+  const yellowHuman = humans[yellowIdx === -1 ? 0 : yellowIdx];
+  const redHuman = humans[humans.findIndex(p => p.id !== yellowHuman.id)];
+  byPlayerId.set(yellowHuman.id, { old: yellowRating, new: ratingA, delta: ratingA - yellowRating });
+  byPlayerId.set(redHuman.id, { old: redRating, new: ratingB, delta: ratingB - redRating });
+
+  return { rated: true, byPlayerId };
 }
 
 module.exports = {
