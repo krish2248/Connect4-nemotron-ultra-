@@ -172,6 +172,16 @@
   animation: pulseGlow 1.5s ease-in-out infinite alternate;
 }
 
+.coin.last-move::after {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+}
+
 @keyframes coinDrop {
   from { transform: translate3d(0, -200px, 0); }
   to { transform: translate3d(0, var(--target-y), 0); }

@@ -73,6 +73,8 @@ export class Board {
       const coin = document.createElement('div');
       coin.className = `coin ${playerColor} dropping`;
       coin.style.setProperty('--target-y', `${targetY}px`);
+      coin.dataset.column = column;
+      coin.dataset.row = Math.round(targetY / (this.slotSize + this.gap));
       this.currentColor = playerColor;
 
       columnEl.appendChild(coin);
@@ -143,6 +145,8 @@ export class Board {
           if (!existing) {
             const coin = document.createElement('div');
             coin.className = `coin ${board[c][r] === 1 ? 'yellow' : 'red'} settled`;
+            coin.dataset.column = c;
+            coin.dataset.row = r;
             coin.style.transform = `translate3d(0, ${r * (this.slotSize + this.gap)}px, 0)`;
             slot.appendChild(coin);
           }
@@ -153,6 +157,20 @@ export class Board {
     });
   }
 
+  clearLastMove() {
+    this.container.querySelectorAll('.coin.last-move')
+      .forEach(el => el.classList.remove('last-move'));
+  }
+
+  // Ring-highlight the most recent drop so both players can see it.
+  markLastMove(column, row) {
+    this.clearLastMove();
+    const col = this.columns[column];
+    if (!col) return;
+    col.element.querySelectorAll(`.coin[data-column="${column}"][data-row="${row}"]`)
+      .forEach(coin => coin.classList.add('last-move'));
+  }
+
   reset() {
     this.columns.forEach(col => {
       col.slots.forEach(slot => {
@@ -160,6 +178,7 @@ export class Board {
         if (coin) coin.remove();
       });
     });
+    this.clearLastMove();
     this.hidePreview();
     this.isAnimating = false;
   }

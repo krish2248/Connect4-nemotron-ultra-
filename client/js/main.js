@@ -9,6 +9,21 @@ import { Chat } from './chat.js';
 import { ThemeManager } from './themes.js';
 import { Rating } from './rating.js';
 
+const NAMES_KEY = 'connect4_names';
+
+function loadNames() {
+  try {
+    return JSON.parse(localStorage.getItem(NAMES_KEY) || '{}') || {};
+  } catch {
+    return {};
+  }
+}
+
+function saveNames(update) {
+  const all = { ...loadNames(), ...update };
+  try { localStorage.setItem(NAMES_KEY, JSON.stringify(all)); } catch (e) {}
+}
+
 const App = {
   state: 'landing',
   ws: null,
@@ -242,6 +257,7 @@ const App = {
     if (this.board) {
       this.board.dropCoin(column, playerColor, targetY, isMyMove).then(() => {
         this.audio.playCoinDrop();
+        this.board.markLastMove(column, row);
       });
     }
 
@@ -579,6 +595,14 @@ const App = {
   },
 
   createLandingScreen() {
+    const saved = loadNames();
+    let ratingChip = '';
+    if (saved.profile) {
+      const r = Rating.get(saved.profile);
+      const rank = Rating.rankFor(r);
+      ratingChip = `<div class="rating-chip" style="display:flex; width:fit-content; margin:0 auto 16px;">⭐ ${r} · <span style="color:${rank.color}">${rank.name}</span></div>`;
+    }
+
     const screen = document.createElement('div');
     screen.className = 'screen active';
     screen.innerHTML = `
@@ -586,7 +610,9 @@ const App = {
         <h1>Connect 4</h1>
         <p class="subtitle">Play a friend online — or take on the computer</p>
 
+        ${ratingChip}
         <button class="btn btn-ghost" id="btn-themes" style="width: 100%; margin-bottom: 8px;">🎨 Theme: ${this.themes.list().find(t => t.id === this.themes.current)?.name || 'Classic Dark'}</button>
+        <button class="btn btn-ghost sound-toggle" id="btn-sound-landing" style="width: 100%; margin-bottom: 8px;"></button>
 
         <div class="divider">Play vs Computer</div>
 
@@ -652,10 +678,17 @@ const App = {
 
     setTimeout(() => {
       const btnThemes = screen.querySelector('#btn-themes');
+      const btnSound = screen.querySelector('#btn-sound-landing');
       const soloPlayerName = screen.querySelector('#solo-player-name');
       const difficultyGroup = screen.querySelector('#difficulty-group');
       const btnPlayComputer = screen.querySelector('#btn-play-computer');
       let difficulty = 'medium';
+
+      // Restore previously used names.
+      soloPlayerName.value = saved.solo || '';
+      screen.querySelector('#create-player-name').value = saved.create || '';
+      screen.querySelector('#join-player-name').value = saved.join || '';
+      screen.querySelector('#spectate-name').value = saved.spectate || '';
 
       difficultyGroup.querySelectorAll('.difficulty-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -666,6 +699,8 @@ const App = {
       });
 
       btnThemes.addEventListener('click', () => this.showThemeModal());
+      btnSound.addEventListener('click', () => { this.audio.toggle(); this.syncSoundButtons(); });
+      this.syncSoundButtons();
 
       btnPlayComputer.addEventListener('click', () => {
         this.createSinglePlayer(soloPlayerName.value, difficulty);
@@ -804,6 +839,7 @@ const App = {
       
       <div class="game-actions" style="margin-top: 16px;">
         <button class="btn btn-secondary stats-btn" id="btn-stats">Stats & Achievements</button>
+        <button class="btn btn-ghost sound-toggle" id="btn-sound"></button>
         <button class="btn btn-ghost" id="btn-leave-game">Leave Game</button>
       </div>
     `;
@@ -831,13 +867,20 @@ const App = {
       this.updatePlayerPanels();
 
       const btnStats = screen.querySelector('#btn-stats');
+      const btnSound = screen.querySelector('#btn-sound');
       const btnLeave = screen.querySelector('#btn-leave-game');
 
       btnStats.addEventListener('click', () => this.showStatsModal());
+      btnSound.addEventListener('click', () => { this.audio.toggle(); this.syncSoundButtons(); });
       btnLeave.addEventListener('click', () => this.disconnect());
     }, 0);
 
     return screen;
+  },
+
+  syncSoundButtons() {
+    const label = `${this.audio.enabled ? '🔊' : '🔇'} Sound ${this.audio.enabled ? 'On' : 'Off'}`;
+    document.querySelectorAll('.sound-toggle').forEach(btn => { btn.textContent = label; });
   },
 
   createSpectatorScreen() {
@@ -879,6 +922,7 @@ const App = {
       
       <div class="game-actions" style="margin-top: 16px;">
         <button class="btn btn-secondary stats-btn" id="btn-stats">Stats & Achievements</button>
+        <button class="btn btn-ghost sound-toggle" id="btn-sound"></button>
         <button class="btn btn-ghost" id="btn-leave-game">Leave</button>
       </div>
     `;
@@ -906,9 +950,11 @@ const App = {
       this.updateSpectatorPanels();
 
       const btnStats = screen.querySelector('#btn-stats');
+      const btnSound = screen.querySelector('#btn-sound');
       const btnLeave = screen.querySelector('#btn-leave-game');
 
       btnStats.addEventListener('click', () => this.showStatsModal());
+      btnSound.addEventListener('click', () => { this.audio.toggle(); this.syncSoundButtons(); });
       btnLeave.addEventListener('click', () => this.disconnect());
     }, 0);
 
@@ -1087,6 +1133,7 @@ const App = {
     this.opponentName = 'Opponent';
     this.opponentRating = null;
     this.playerName = playerName || 'Player 1';
+    saveNames({ create: this.playerName, profile: this.playerName });
     this.ws.send('createRoom', { name, password, playerName: this.playerName, rating: Rating.get(this.playerName) });
   },
 
@@ -1094,16 +1141,19 @@ const App = {
     this.singlePlayer = true;
     this.difficulty = difficulty || 'medium';
     this.playerName = playerName || 'Player 1';
+    saveNames({ solo: this.playerName, profile: this.playerName });
     this.ws.send('createSinglePlayer', { playerName: this.playerName, difficulty: this.difficulty, rating: Rating.get(this.playerName) });
   },
 
   joinRoom(roomId, password, playerName) {
     this.playerName = playerName || 'Player 2';
+    saveNames({ join: this.playerName, profile: this.playerName });
     this.ws.send('joinRoom', { roomId, password, playerName: this.playerName, rating: Rating.get(this.playerName) });
   },
 
   joinSpectator(roomId, spectatorName) {
     this.spectatorName = spectatorName || `Spectator ${Math.floor(Math.random() * 1000)}`;
+    saveNames({ spectate: this.spectatorName });
     this.ws.send('joinSpectator', { roomId, spectatorName: this.spectatorName });
   },
 

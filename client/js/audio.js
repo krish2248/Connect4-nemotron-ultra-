@@ -1,7 +1,9 @@
+const SOUND_KEY = 'connect4_sound';
+
 export class AudioManager {
   constructor() {
     this.ctx = null;
-    this.enabled = true;
+    this.enabled = localStorage.getItem(SOUND_KEY) !== 'off';
     this.init();
   }
 
@@ -163,6 +165,7 @@ export class AudioManager {
 
   toggle() {
     this.enabled = !this.enabled;
+    try { localStorage.setItem(SOUND_KEY, this.enabled ? 'on' : 'off'); } catch (e) {}
     return this.enabled;
   }
 

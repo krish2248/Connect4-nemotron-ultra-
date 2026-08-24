@@ -6,26 +6,25 @@
 
 ---
 
-## ▶️ Resume Here (Tomorrow)
+## ▶️ Resume Here (Next Time)
 
-**Last commit:** `f3d55e5` — *Add spectator mode*.
-**Uncommitted in working tree:** chat/emotes · ELO ranking · custom themes (all three
-implemented, smoke-tested end-to-end, ready to commit & push).
+**Last commit:** `b4c537b` — *Add chat/emotes, ELO ranking, and custom themes* (pushed; Render auto-deploys).
 
-**What just shipped:** In-game chat with floating emotes (players + spectators),
-server-authoritative ELO (K=32) with Bronze→Diamond tiers shown on player panels,
-and 6 switchable color themes persisted to localStorage.
+**What just shipped:** Polish pass completing the feature set — last-move ring
+highlight on the board, sound on/off toggle (landing + game + spectator screens,
+persisted), remembered player names per form, and an ELO/tier chip on the
+landing screen. README feature list refreshed.
 
 **Verify:**
-1. Two tabs → join same room → send messages/emotes from the chat bubble (bottom-right); emotes float up the board.
-2. Finish a multiplayer game → stats modal shows Before / Change / New rating + tier; panels show ⭐ rating lines.
-3. Landing screen → 🎨 Theme button → pick a theme; refresh keeps it.
-4. Refresh mid-game → reconnect restores names, room code header, ratings.
+1. Play a move → the dropped coin shows a white ring until the next move.
+2. Click 🔊 Sound on any screen → label flips to 🔇 and stays off after refresh.
+3. Enter your name once → it's prefilled on next visit; landing shows your ⭐ rating + tier.
+4. Full regression: two tabs create/join/chat/play — all good (20/20 automated WS tests).
 
 **How to run locally:** `cd server && npm install && npm start` → open
 http://localhost:3000.
 
-**Next candidates (pick one):** move hints/highlights · tournament mode · sound toggle in UI · profile name picker on landing.
+**Remaining ideas (optional):** tournament brackets · move hints for beginners · profile avatars · spectator count display.
 
 ---
 
@@ -81,6 +80,9 @@ A real-time 2-player online Connect 4 game with:
 - ✅ **In-game chat + emotes** — players & spectators, rate-limited, unread badge, floating emote animation, chat sound
 - ✅ **ELO ranking** — server-computed K=32 Elo on multiplayer games (bot games unrated), Bronze/Silver/Gold/Platinum/Diamond tiers, shown on player panels + stats modals
 - ✅ **Custom themes** — 6 themes (Classic Dark, Midnight Blue, Forest Green, Sunset Purple, Neon Arcade, Daylight), persisted in localStorage
+- ✅ **Last-move highlight** — white ring on the most recent coin
+- ✅ **Sound toggle** — 🔊/🔇 button on landing, game and spectator screens; preference persisted
+- ✅ **Remembered names** — per-form name memory + profile name drives the landing ELO chip
 - ✅ Human-readable 6-char room codes
 - ✅ Password-protected rooms (SHA-256 + salt)
 - ✅ 30s turn timer (server-authoritative, synced to both clients)
@@ -241,10 +243,10 @@ Open Render URL on desktop + phone. Create room on one, join with 6-char code on
 ---
 
 ## Next Steps (if continuing)
-1. Move hints / last-move highlight
-2. Tournament mode (brackets)
-3. Sound toggle button in the game UI
-4. Profile name picker remembered across sessions
+1. Tournament mode (brackets)
+2. Move hints for beginners
+3. Profile avatars
+4. Spectator count display
 
 ---
 
@@ -276,4 +278,4 @@ Open Render URL on desktop + phone. Create room on one, join with 6-char code on
 
 ---
 
-*Last updated: 2026-08-24 — Added in-game chat + floating emotes, ELO ranking (K=32, Bronze→Diamond tiers), and 6 custom themes. All smoke-tested end-to-end; ready to commit/push.*
+*Last updated: 2026-08-24 — Polish pass: last-move highlight, sound toggle (persisted), remembered names, landing ELO chip; README refreshed. Feature set complete and smoke-tested.*

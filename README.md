@@ -5,9 +5,15 @@ A real-time multiplayer Connect 4 game with WebSocket server, elegant UI, animat
 ## Features
 
 - **Real-time multiplayer** via WebSocket (Node.js + ws)
+- **Single-player vs AI** — minimax bot with Easy / Medium / Hard difficulty
+- **Spectator mode** — watch any active game live by room code
+- **In-game chat & emotes** — rate-limited, with floating emote animations
+- **ELO ranking** — server-computed (K=32) with Bronze→Diamond tiers
+- **6 color themes** — persisted per browser
 - **Room-based play** with human-readable room codes (6 chars)
 - **Password-protected rooms** with SHA-256 hashing
 - **60fps GPU-accelerated coin drop animations** with bounce effect
+- **Last-move highlight** so both players can follow play
 - **30-second turn timer** with circular progress ring (server-authoritative)
 - **Win detection** (horizontal, vertical, both diagonals) + draw detection
 - **Win animations**: coin glow, confetti burst, banner entrance
@@ -17,7 +23,7 @@ A real-time multiplayer Connect 4 game with WebSocket server, elegant UI, animat
 - **Rematch system** - play again in same room
 - **Responsive design** - desktop & mobile
 - **Keyboard support** (1-7 keys) + mouse/touch
-- **Elegant sound effects** (Web Audio API)
+- **Elegant sound effects** (Web Audio API) with in-game mute toggle
 - **Dark premium theme** - no flashy/gimmicky elements
 
 ## Quick Start
