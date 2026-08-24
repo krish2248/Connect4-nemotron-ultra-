@@ -8,8 +8,10 @@ import { AudioManager } from './audio.js';
 import { Chat } from './chat.js';
 import { ThemeManager } from './themes.js';
 import { Rating } from './rating.js';
+import { ClientGameLogic } from './gameLogic.js';
 
 const NAMES_KEY = 'connect4_names';
+const AVATARS = ['🙂', '😎', '🦊', '🐼', '🐸', '🦁', '🐯', '🐨', '🦄', '🐙', '🤖', '👾'];
 
 function loadNames() {
   try {
@@ -37,6 +39,8 @@ const App = {
   difficulty: null,
   opponentName: 'Opponent',
   opponentRating: null,
+  myAvatar: null,
+  opponentAvatar: null,
   gameState: null,
   timerState: null,
   myTurn: false,
@@ -152,6 +156,9 @@ const App = {
       case 'spectatorJoined':
         this.handleSpectatorJoined(payload);
         break;
+      case 'spectatorCount':
+        this.updateSpectatorCount(payload.count);
+        break;
       case 'botThinking':
         this.updateBotThinking(payload.thinking);
         break;
@@ -182,6 +189,7 @@ const App = {
       this.difficulty = payload.difficulty || this.difficulty;
       this.opponentName = payload.opponentName || 'Computer';
       this.opponentRating = null;
+      this.opponentAvatar = '🤖';
       return;
     }
 
@@ -197,6 +205,7 @@ const App = {
     const other = payload.players.find(p => p.id !== this.playerId);
     this.opponentName = other?.name || 'Opponent';
     this.opponentRating = Number.isFinite(other?.rating) ? other.rating : null;
+    this.opponentAvatar = other?.avatar || null;
     this.lastEloResult = null;
     Reconnect.saveSession(this.roomId, this.playerId);
     if (payload.gameState) {
@@ -255,6 +264,7 @@ const App = {
     const targetY = row * (this.getSlotSize() + this.getGap());
 
     if (this.board) {
+      this.board.clearColumnHints();
       this.board.dropCoin(column, playerColor, targetY, isMyMove).then(() => {
         this.audio.playCoinDrop();
         this.board.markLastMove(column, row);
@@ -393,6 +403,12 @@ const App = {
       this.opponentRating = Number.isFinite(payload.opponentRating)
         ? payload.opponentRating
         : this.opponentRating;
+      this.myAvatar = payload.playerAvatar !== undefined
+        ? payload.playerAvatar
+        : this.myAvatar;
+      this.opponentAvatar = payload.opponentAvatar !== undefined
+        ? payload.opponentAvatar
+        : this.opponentAvatar;
     }
     this.reconnecting = false;
     this.ui.showReconnecting(false);
@@ -613,6 +629,7 @@ const App = {
         ${ratingChip}
         <button class="btn btn-ghost" id="btn-themes" style="width: 100%; margin-bottom: 8px;">🎨 Theme: ${this.themes.list().find(t => t.id === this.themes.current)?.name || 'Classic Dark'}</button>
         <button class="btn btn-ghost sound-toggle" id="btn-sound-landing" style="width: 100%; margin-bottom: 8px;"></button>
+        <button class="btn btn-ghost" id="btn-avatar" style="width: 100%; margin-bottom: 8px;">Avatar: ${saved.avatar || '🙂'}</button>
 
         <div class="divider">Play vs Computer</div>
 
@@ -679,6 +696,7 @@ const App = {
     setTimeout(() => {
       const btnThemes = screen.querySelector('#btn-themes');
       const btnSound = screen.querySelector('#btn-sound-landing');
+      const btnAvatar = screen.querySelector('#btn-avatar');
       const soloPlayerName = screen.querySelector('#solo-player-name');
       const difficultyGroup = screen.querySelector('#difficulty-group');
       const btnPlayComputer = screen.querySelector('#btn-play-computer');
@@ -700,6 +718,7 @@ const App = {
 
       btnThemes.addEventListener('click', () => this.showThemeModal());
       btnSound.addEventListener('click', () => { this.audio.toggle(); this.syncSoundButtons(); });
+      btnAvatar.addEventListener('click', () => this.showAvatarModal());
       this.syncSoundButtons();
 
       btnPlayComputer.addEventListener('click', () => {
@@ -808,6 +827,7 @@ const App = {
         <div class="room-info">
           <span class="room-name">Connect 4</span>
           <span class="room-code" id="game-room-code">${this.roomId}</span>
+          <span class="room-code hidden" id="spec-count">👁 0</span>
         </div>
       </div>
       
@@ -817,7 +837,7 @@ const App = {
       
       <div class="game-header" style="display: flex; justify-content: space-between; width: 100%; max-width: 500px; margin-top: 12px;">
         <div class="player-panel" id="player1-panel">
-          <div class="player-avatar yellow"></div>
+          <div class="player-avatar yellow" id="player1-avatar"></div>
           <div class="player-info">
             <div class="player-name" id="player1-name">Player 1</div>
             <div class="player-rating" id="player1-rating"></div>
@@ -825,7 +845,7 @@ const App = {
           <div class="timer-ring-container" id="timer1-ring"></div>
         </div>
         <div class="player-panel" id="player2-panel">
-          <div class="player-avatar red"></div>
+          <div class="player-avatar red" id="player2-avatar"></div>
           <div class="player-info">
             <div class="player-name" id="player2-name">Player 2</div>
             <div class="player-rating" id="player2-rating"></div>
@@ -839,6 +859,7 @@ const App = {
       
       <div class="game-actions" style="margin-top: 16px;">
         <button class="btn btn-secondary stats-btn" id="btn-stats">Stats & Achievements</button>
+        <button class="btn btn-secondary" id="btn-hint">💡 Hint</button>
         <button class="btn btn-ghost sound-toggle" id="btn-sound"></button>
         <button class="btn btn-ghost" id="btn-leave-game">Leave Game</button>
       </div>
@@ -867,10 +888,12 @@ const App = {
       this.updatePlayerPanels();
 
       const btnStats = screen.querySelector('#btn-stats');
+      const btnHint = screen.querySelector('#btn-hint');
       const btnSound = screen.querySelector('#btn-sound');
       const btnLeave = screen.querySelector('#btn-leave-game');
 
       btnStats.addEventListener('click', () => this.showStatsModal());
+      btnHint.addEventListener('click', () => this.showHint());
       btnSound.addEventListener('click', () => { this.audio.toggle(); this.syncSoundButtons(); });
       btnLeave.addEventListener('click', () => this.disconnect());
     }, 0);
@@ -883,6 +906,62 @@ const App = {
     document.querySelectorAll('.sound-toggle').forEach(btn => { btn.textContent = label; });
   },
 
+  // Beginner helper: green = winning move now, red = must block here,
+  // yellow = a safe developing move. Purely client-side.
+  showHint() {
+    if (!this.myTurn || !this.board || this.board.isAnimating) return;
+    const board = this.gameState?.board;
+    if (!board) return;
+
+    const gl = ClientGameLogic;
+    const work = board.map(col => col.slice());
+    const me = this.playerColor === 'yellow' ? 1 : 2;
+    const opp = me === 1 ? 2 : 1;
+    const moves = gl.getValidMoves(work);
+
+    const winCols = [];
+    const blockCols = [];
+    for (const c of moves) {
+      const r = gl.getDropRow(work, c);
+      work[c][r] = me;
+      if (gl.checkWin(work, c, r, me).win) winCols.push(c);
+      work[c][r] = opp;
+      if (gl.checkWin(work, c, r, opp).win) blockCols.push(c);
+      work[c][r] = 0;
+    }
+
+    if (winCols.length) {
+      this.board.showColumnHints(winCols, 'win');
+      return;
+    }
+    if (blockCols.length) {
+      this.board.showColumnHints(blockCols, 'block');
+      return;
+    }
+
+    // No tactics — suggest the centre-most move that doesn't hand the
+    // opponent an immediate win on their reply.
+    const preference = [3, 2, 4, 1, 5, 0, 6];
+    const safe = c => {
+      const r = gl.getDropRow(work, c);
+      work[c][r] = me;
+      let handsThemWin = false;
+      for (const oc of gl.getValidMoves(work)) {
+        const orow = gl.getDropRow(work, oc);
+        work[oc][orow] = opp;
+        if (gl.checkWin(work, oc, orow, opp).win) { handsThemWin = true; }
+        work[oc][orow] = 0;
+        if (handsThemWin) break;
+      }
+      work[c][r] = 0;
+      return !handsThemWin;
+    };
+
+    const candidates = preference.filter(c => moves.includes(c));
+    const pick = candidates.find(safe) ?? moves[0];
+    this.board.showColumnHints([pick], 'build');
+  },
+
   createSpectatorScreen() {
     const screen = document.createElement('div');
     screen.className = 'screen active board-screen';
@@ -891,6 +970,7 @@ const App = {
         <div class="room-info">
           <span class="room-name">Connect 4 — Spectating</span>
           <span class="room-code" id="game-room-code">${this.roomId}</span>
+          <span class="room-code hidden" id="spec-count">👁 0</span>
         </div>
       </div>
       
@@ -900,7 +980,7 @@ const App = {
       
       <div class="game-header" style="display: flex; justify-content: space-between; width: 100%; max-width: 500px; margin-top: 12px;">
         <div class="player-panel" id="player1-panel">
-          <div class="player-avatar yellow"></div>
+          <div class="player-avatar yellow" id="player1-avatar"></div>
           <div class="player-info">
             <div class="player-name" id="player1-name">Player 1</div>
             <div class="player-rating" id="player1-rating"></div>
@@ -908,7 +988,7 @@ const App = {
           <div class="timer-ring-container" id="timer1-ring"></div>
         </div>
         <div class="player-panel" id="player2-panel">
-          <div class="player-avatar red"></div>
+          <div class="player-avatar red" id="player2-avatar"></div>
           <div class="player-info">
             <div class="player-name" id="player2-name">Player 2</div>
             <div class="player-rating" id="player2-rating"></div>
@@ -982,16 +1062,28 @@ const App = {
     const n2 = document.getElementById('player2-name');
     const r1 = document.getElementById('player1-rating');
     const r2 = document.getElementById('player2-rating');
+    const a1 = document.getElementById('player1-avatar');
+    const a2 = document.getElementById('player2-avatar');
 
     if (p1 && p2 && n1 && n2 && this.gameState) {
       n1.textContent = this.player1Name || 'Player 1';
       n2.textContent = this.player2Name || 'Player 2';
+      if (a1) a1.textContent = this.player1Avatar || '';
+      if (a2) a2.textContent = this.player2Avatar || '';
       if (r1) r1.textContent = this.formatRatingLine(this.player1Name, this.spectatorRatings?.[0]);
       if (r2) r2.textContent = this.formatRatingLine(this.player2Name, this.spectatorRatings?.[1]);
 
       const currentPlayer = this.gameState.currentPlayer;
       p1.classList.toggle('active', currentPlayer === 1);
       p2.classList.toggle('active', currentPlayer === 2);
+    }
+  },
+
+  updateSpectatorCount(count) {
+    const el = document.getElementById('spec-count');
+    if (el) {
+      el.textContent = `👁 ${count}`;
+      el.classList.toggle('hidden', !count);
     }
   },
 
@@ -1003,6 +1095,8 @@ const App = {
     this.opponentName = 'Spectating';
     this.player1Name = payload.players[0]?.name || 'Player 1';
     this.player2Name = payload.players[1]?.name || 'Player 2';
+    this.player1Avatar = payload.players[0]?.avatar || null;
+    this.player2Avatar = payload.players[1]?.avatar || null;
     this.spectatorRatings = [
       Number.isFinite(payload.players[0]?.rating) ? payload.players[0].rating : null,
       Number.isFinite(payload.players[1]?.rating) ? payload.players[1].rating : null
@@ -1010,6 +1104,7 @@ const App = {
     this.gameState = payload.gameState;
     this.state = 'spectating';
     this.render();
+    this.updateSpectatorCount(payload.spectatorCount || 0);
   },
 
   updatePlayerPanels() {
@@ -1020,6 +1115,8 @@ const App = {
     const n2 = document.getElementById('player2-name');
     const r1 = document.getElementById('player1-rating');
     const r2 = document.getElementById('player2-rating');
+    const a1 = document.getElementById('player1-avatar');
+    const a2 = document.getElementById('player2-avatar');
 
     const myRating = this.playerName ? Rating.get(this.playerName) : null;
     const myRatingLine = this.formatRatingLine(this.playerName, myRating);
@@ -1030,6 +1127,10 @@ const App = {
     if (p1 && p2 && n1 && n2) {
       n1.textContent = isYellow ? `${this.playerName} (You)` : this.opponentName;
       n2.textContent = !isYellow ? `${this.playerName} (You)` : this.opponentName;
+      const myAvatar = this.myAvatar || '';
+      const oppAvatar = this.singlePlayer ? '🤖' : (this.opponentAvatar || '');
+      if (a1) a1.textContent = isYellow ? myAvatar : oppAvatar;
+      if (a2) a2.textContent = !isYellow ? myAvatar : oppAvatar;
       if (r1) r1.textContent = isYellow ? myRatingLine : oppRatingLine;
       if (r2) r2.textContent = !isYellow ? myRatingLine : oppRatingLine;
 
@@ -1098,6 +1199,33 @@ const App = {
     ]);
   },
 
+  showAvatarModal() {
+    const current = loadNames().avatar;
+    const content = `
+      <div class="avatar-grid">
+        ${AVATARS.map(a => `
+          <button class="avatar-option ${a === current ? 'active' : ''}" data-avatar="${a}" type="button">${a}</button>
+        `).join('')}
+      </div>
+    `;
+
+    this.ui.showModal('Choose your Avatar', content, [
+      { label: 'Done', class: 'btn-primary', handler: () => {} }
+    ]);
+
+    setTimeout(() => {
+      document.querySelectorAll('.avatar-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+          saveNames({ avatar: btn.dataset.avatar });
+          document.querySelectorAll('.avatar-option').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const landingBtn = document.getElementById('btn-avatar');
+          if (landingBtn) landingBtn.textContent = `Avatar: ${btn.dataset.avatar}`;
+        });
+      });
+    }, 0);
+  },
+
   showThemeModal() {
     const themes = this.themes.list();
     const content = `
@@ -1132,29 +1260,34 @@ const App = {
     this.singlePlayer = false;
     this.opponentName = 'Opponent';
     this.opponentRating = null;
+    this.opponentAvatar = null;
     this.playerName = playerName || 'Player 1';
+    this.myAvatar = loadNames().avatar || null;
     saveNames({ create: this.playerName, profile: this.playerName });
-    this.ws.send('createRoom', { name, password, playerName: this.playerName, rating: Rating.get(this.playerName) });
+    this.ws.send('createRoom', { name, password, playerName: this.playerName, rating: Rating.get(this.playerName), avatar: this.myAvatar });
   },
 
   createSinglePlayer(playerName, difficulty) {
     this.singlePlayer = true;
     this.difficulty = difficulty || 'medium';
     this.playerName = playerName || 'Player 1';
+    this.myAvatar = loadNames().avatar || null;
     saveNames({ solo: this.playerName, profile: this.playerName });
-    this.ws.send('createSinglePlayer', { playerName: this.playerName, difficulty: this.difficulty, rating: Rating.get(this.playerName) });
+    this.ws.send('createSinglePlayer', { playerName: this.playerName, difficulty: this.difficulty, rating: Rating.get(this.playerName), avatar: this.myAvatar });
   },
 
   joinRoom(roomId, password, playerName) {
     this.playerName = playerName || 'Player 2';
+    this.myAvatar = loadNames().avatar || null;
     saveNames({ join: this.playerName, profile: this.playerName });
-    this.ws.send('joinRoom', { roomId, password, playerName: this.playerName, rating: Rating.get(this.playerName) });
+    this.ws.send('joinRoom', { roomId, password, playerName: this.playerName, rating: Rating.get(this.playerName), avatar: this.myAvatar });
   },
 
   joinSpectator(roomId, spectatorName) {
     this.spectatorName = spectatorName || `Spectator ${Math.floor(Math.random() * 1000)}`;
+    const myAvatar = loadNames().avatar || null;
     saveNames({ spectate: this.spectatorName });
-    this.ws.send('joinSpectator', { roomId, spectatorName: this.spectatorName });
+    this.ws.send('joinSpectator', { roomId, spectatorName: this.spectatorName, avatar: myAvatar });
   },
 
   disconnect() {
@@ -1172,6 +1305,10 @@ const App = {
     this.spectatorRatings = null;
     this.player1Name = null;
     this.player2Name = null;
+    this.player1Avatar = null;
+    this.player2Avatar = null;
+    this.myAvatar = null;
+    this.opponentAvatar = null;
     this.gameState = null;
     this.timerState = null;
     this.singlePlayer = false;

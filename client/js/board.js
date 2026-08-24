@@ -162,6 +162,23 @@ export class Board {
       .forEach(el => el.classList.remove('last-move'));
   }
 
+  // Beam-highlight columns suggested by the hint system: 'win' | 'block' | 'build'.
+  showColumnHints(columns, kind) {
+    this.clearColumnHints();
+    columns.forEach(c => {
+      const el = this.columns[c]?.element;
+      if (el) el.classList.add('hinted', `hint-${kind}`);
+    });
+    clearTimeout(this._hintTimer);
+    this._hintTimer = setTimeout(() => this.clearColumnHints(), 2600);
+  }
+
+  clearColumnHints() {
+    clearTimeout(this._hintTimer);
+    this.container.querySelectorAll('.slot-column.hinted')
+      .forEach(el => el.classList.remove('hinted', 'hint-win', 'hint-block', 'hint-build'));
+  }
+
   // Ring-highlight the most recent drop so both players can see it.
   markLastMove(column, row) {
     this.clearLastMove();
@@ -179,6 +196,7 @@ export class Board {
       });
     });
     this.clearLastMove();
+    this.clearColumnHints();
     this.hidePreview();
     this.isAnimating = false;
   }

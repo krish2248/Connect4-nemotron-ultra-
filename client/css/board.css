@@ -207,6 +207,15 @@
   animation: shake 0.3s ease-in-out;
 }
 
+.slot-column.hinted {
+  border-radius: var(--radius-sm);
+  transition: box-shadow 0.2s ease-out;
+}
+
+.slot-column.hint-win { box-shadow: 0 0 16px rgba(34, 197, 94, 0.75); }
+.slot-column.hint-block { box-shadow: 0 0 16px rgba(239, 68, 68, 0.7); }
+.slot-column.hint-build { box-shadow: 0 0 12px rgba(251, 191, 36, 0.5); }
+
 @keyframes shake {
   0%, 100% { transform: translateX(0); }
   20% { transform: translateX(-8px); }
